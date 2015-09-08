@@ -19,12 +19,16 @@ var __extends = this.__extends || function (d, b) {
     d.prototype = new __();
 };
 
+/*************************************************************************************/
+
 var stackbox_main = (function() {
 	function stackbox_main() {
 		
 	}
 	return stackbox_main;
 })();
+
+/*************************************************************************************/
 
 var sbtp = {
 	'pos': stackbox_type_position,
@@ -221,6 +225,8 @@ var stackbox_type_range = (function() {
 	return stackbox_type_range;
 })();
 
+/*************************************************************************************/
+
 var stackbox_atom = (function() {
 	function stackbox_atom(range) {
 		this.spec = {};
@@ -245,6 +251,8 @@ var stackbox_spec_graph = (function() {
 	};
 	return stackbox_spec_graph;
 })();
+
+/***********************************GRAPH**********************************************/
 
 var stackbox_graph = (function() {
 	function stackbox_graph(layers) {
@@ -374,7 +382,51 @@ var stackbox_graph_layer = (function() {
 		this.surface.clear(info.range);
 		return true;
 	};
+	stackbox_graph_layer.prototype.reset = function() {
+		this.surface.reset();
+	};
 	return stackbox_graph_layer;
+})();
+
+/* Dynamic layer */
+var stackbox_graph_layer_dynamic = (function() {
+	var layer_id = 100000;
+	var dl_id = 1;
+	function stackbox_graph_layer_dynamic() {
+		this.range2local = function(range) {return range;};
+		this.id = layer_id;
+		layer_id ++;
+		this.draw_list = {};
+	}
+	stackbox_graph_layer_dynamic.prototype.draw = function(frame, pos, trans) {
+		var dst_range = frame.range.move_to(pos);
+		var loc_range = this.range2local(dst_range);
+		this.draw_list[dl_id] = [loc_range, frame, trans];
+		return {
+			"id": this.id,
+			"dlid": dl_id++,
+		};
+	};
+	stackbox_graph_layer_dynamic.prototype.blit = function(src_rng, dst_surf, dst_pos, dst_trans) {
+		var loc_range = this.range2local(src_rng);
+		for(var k in this.draw_list) {
+			var dl = this.draw_list[k];
+			if(src_rng.collision_with(dl[0])) {
+				dl[1].blit(
+					dst_surf, dst_pos,
+					stackbox_util.comb2(dst_trans, dl[2], dst_trans.plus(dl[2]))
+				);
+			}
+		}
+	};
+	stackbox_graph_layer_dynamic.prototype.clear = function(info) {
+		if(info.id != this.id) return false;
+		return (delete this.draw_list[info.dlid]);
+	};
+	stackbox_graph_layer_dynamic.prototype.reset = function() {
+		this.draw_list = {};
+	};
+	return stackbox_graph_layer_dynamic;
 })();
 
 var stackbox_graph_camera = (function() {
@@ -438,20 +490,16 @@ var stackbox_graph_camera = (function() {
 			if(range_f.collision_with(this.range.flat())) {
 				if(this.dirty_range.static.hasOwnProperty(tp)) {
 					range_f = this.dirty_range.static[tp][0].max(range_f);
-					this.dirty_range.static[tp] = [range_f, range_f.top.minus(this.range.top)];
-				} else {
-					this.dirty_range.static[tp] = [range_f, range_f.top.minus(this.range.top)];
 				}
+				this.dirty_range.static[tp] = range_f;
 			}
 		} else {
 			if(range.collision_with(this.range)) {
 				var lyr = this.box.ztp2layer(range.top.z, tp, this.box);
 				if(this.dirty_range.dynamic.hasOwnProperty(lyr)) {
-					range_f = this.dirty_range.dynamic[lyr][0].max(range_f);
-					this.dirty_range.dynamic[lyr] = [range_f, range_f.top.minus(this.range.top)];
-				} else {
-					this.dirty_range.dynamic[lyr] = [range_f, range_f.top.minus(this.range.top)];
+					range_f = this.dirty_range.dynamic[lyr][0].max(range_f);	
 				}
+				this.dirty_range.dynamic[lyr] = range_f;
 			}
 		}
 	};
@@ -476,19 +524,24 @@ var stackbox_graph_camera = (function() {
 				}
 			}
 		} else {
+			var range_s;
 			for(var key in this.dirty_range.dynamic) {
 				var ikey = Number(key);
+				range_s = this.dirty_range.dynamic[key];
+				range_s = range_s.min(this.range.flat());
 				this.box.get_layer(ikey).blit(
-					this.dirty_range.dynamic[key][0],
+					range_s,
 					this.surfaces.dynamic[ikey - this.win_start()],
-					this.dirty_range.dynamic[key][1]
+					range_s.top.minus(this.range.top)
 				);
 			}
 			for(var key in this.dirty_range.static) {
+				range_s = this.dirty_range.static[key];
+				range_s = range_s.min(this.range.flat());
 				this.box.get_layer(key).blit(
-					this.dirty_range.static[key][0],
+					range_s,
 					this.surfaces.static[key],
-					this.dirty_range.static[key][1]
+					range_s.top.minus(this.range.top)
 				);
 			}
 		}
@@ -529,6 +582,9 @@ var stackbox_graph_surface = (function() {
 	};
 	stackbox_graph_surface.prototype.clear = function(rng) {
 		stackbox_graph_system.clear(this.ctx, rng);
+	};
+	stackbox_graph_surface.prototype.reset = function() {
+		stackbox_graph_system.reset(this.ctx);
 	};
 	return stackbox_graph_surface;
 })();
@@ -587,6 +643,8 @@ var stackbox_graph_frame = (function() {
 	return stackbox_graph_frame;
 })();
 
+/*************************************************************************************/
+
 var stackbox_graph_system = {
 	screen_div: null,
 	screen_width: 0,
@@ -640,7 +698,12 @@ var stackbox_graph_system = {
 	clear: function(ctx, rng) {
 		ctx.clearRect(rng.top.x, rng.top.y, rng.len(0), rng.len(1));
 	},
+	reset: function(ctx) {
+		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+	},
 };
+
+/*************************************************************************************/
 
 var stackbox_util = {
 	parse_argv: function(argv, argtab) {
@@ -657,6 +720,16 @@ var stackbox_util = {
 		}
 		rslt['patt'] = 'none';
 		return rslt;
+	},
+	comb2: function(a, b, c) {
+		if(a && b)
+			return c;
+		else if(a)
+			return a;
+		else if(b)
+			return b;
+		else
+			return null;
 	},
 	async_checker: (function() {
 		function async_checker() {
