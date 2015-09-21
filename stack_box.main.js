@@ -388,6 +388,8 @@ var stackbox_dfan_automaton = (function() {
 	var HK_GET = 'get';
 	var HK_SET = 'set';
 	var HK_CHANGE = 'change';
+	var SYM_TRIG = '*';
+	var SYM_IMPT = '@';
 	function stackbox_dfan_automaton() {
 		this._props_info = {};
 		this._state_func = null;
@@ -432,7 +434,7 @@ var stackbox_dfan_automaton = (function() {
 		for(var i = 0; i < trig.length; i++) {
 			var prop_trig = trig[i];
 			var prop = prop_trig;
-			if(prop_trig[0] == '@') {
+			if(prop_trig[0] == SYM_TRIG) {
 				var _splt = prop_trig.slice(1).split(':');
 				var prop = _splt[0];
 				var trig = _splt[1];
@@ -457,6 +459,24 @@ var stackbox_dfan_automaton = (function() {
 	};
 	stackbox_dfan_automaton.prototype.prop_islocked = function(name, trig) {
 		return this._props_info[name].prop.islocked(trig);
+	};
+	stackbox_dfan_automaton.prototype.prop_get = function(name) {
+		return this._props_info[name].prop.get();
+	};
+	stackbox_dfan_automaton.prototype.prop_set = function(name, val) {
+		if(name[0] == SYM_IMPT) return; //Read only property (import from extra)
+		return this._props_info[name].prop.set(val);
+	};
+	stackbox_dfan_automaton.prototype.prop_list = function(own) {
+		var r = [];
+		for(var k in this._props_info) {
+			if(own) {
+				if(k[0] != SYM_IMPT) r.push(k);
+			} else {
+				r.push(k);
+			}
+		}
+		return r;
 	};
 	stackbox_dfan_automaton.prototype.bind_prop = function(name, prop) {
 		if(name in this._props_info) this.remove_prop(name);
