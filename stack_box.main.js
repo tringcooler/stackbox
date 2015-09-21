@@ -378,6 +378,9 @@ var stackbox_dfan_property = (function() {
 	stackbox_dfan_property.prototype.dishook = function(hid) {
 		return this._hook.remove(hid);
 	};
+	stackbox_dfan_property.prototype.islocked = function(hk) {
+		return this._hooks_lock.check(hk);
+	};
 	return stackbox_dfan_property;
 })();
 
@@ -451,6 +454,9 @@ var stackbox_dfan_automaton = (function() {
 	stackbox_dfan_automaton.prototype.goto_state = function(state) {
 		this._set_triggers(this._get_state_trig(state));
 		this._state_func = this._get_state_func(state);
+	};
+	stackbox_dfan_automaton.prototype.prop_islocked = function(name, trig) {
+		return this._props_info[name].prop.islocked(trig);
 	};
 	stackbox_dfan_automaton.prototype.bind_prop = function(name, prop) {
 		if(name in this._props_info) this.remove_prop(name);
