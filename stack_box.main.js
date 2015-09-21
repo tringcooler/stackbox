@@ -335,11 +335,15 @@ var stackbox_dfan_property = (function() {
 	var HK_GET = 'get';
 	var HK_SET = 'set';
 	var HK_CHANGE = 'change';
+	var default_eq = function(a, b) {
+		return a == b;
+	};
 	function stackbox_dfan_property(val) {
 		if(val == undefined) val = null;
 		this._value = val;
 		this._hooks = new stackbox_dfan_hooks();
 		this._hooks_lock = new stackbox_dfan_lock_simple();
+		this.__eq__ = default_eq;
 	}
 	stackbox_dfan_property.prototype.get = function() {
 		var val = this._value;
@@ -361,7 +365,7 @@ var stackbox_dfan_property = (function() {
 			this._hooks_lock.lock(HK_SET);
 		}
 		if(!this._hooks_lock.check(HK_CHANGE)) {
-			if(this._value !== val) {
+			if(!this.__eq__(this._value, val)) {
 				this._hooks_lock.lock(HK_CHANGE);
 				var r = this._hooks.invoke(HK_CHANGE, val, this._value, this);
 				if(r != undefined)
@@ -395,7 +399,8 @@ var stackbox_dfan_automaton = (function() {
 		this._state_func = null;
 	}
 	stackbox_dfan_automaton.prototype.handled_trigger = [
-		HK_GET, HK_SET, HK_CHANGE
+		//HK_GET, HK_SET, HK_CHANGE
+		HK_CHANGE
 	];
 	stackbox_dfan_automaton.prototype._prop_handler = function(name, trigger) {
 		if(!this._state_func) return;
@@ -451,7 +456,9 @@ var stackbox_dfan_automaton = (function() {
 		return this.__proto__['state_' + state];
 	};
 	stackbox_dfan_automaton.prototype._get_state_trig = function(state) {
-		return this.__proto__['state_' + state + '_trig'];
+		var r = this.__proto__['state_' + state + '_trig'];
+		if(r == undefined) r = [];
+		return r;
 	};
 	stackbox_dfan_automaton.prototype.goto_state = function(state) {
 		this._set_triggers(this._get_state_trig(state));
@@ -478,6 +485,12 @@ var stackbox_dfan_automaton = (function() {
 		}
 		return r;
 	};
+	stackbox_dfan_automaton.prototype.prop_check = function(need_list) {
+		for(var i = 0; i < need_list.length; i++) {
+			if(!(need_list[i] in this._props_info)) return false;
+		}
+		return true;
+	};
 	stackbox_dfan_automaton.prototype.bind_prop = function(name, prop) {
 		if(name in this._props_info) this.remove_prop(name);
 		var prop_info = {
@@ -503,6 +516,39 @@ var stackbox_dfan_automaton = (function() {
 	};
 	return stackbox_dfan_automaton;
 })();
+
+/***********************************SPECS**********************************************/
+
+var stackbox_spec_prop = stackbox_dfan_property;
+
+var stackbox_spec_prop_pos = (function(_super) {
+	__extends(stackbox_spec_prop_pos, _super);
+	var pos_eq = function(a, b) {
+		return a.eq(b);
+	};
+	function stackbox_spec_prop_pos(pos) {
+		_super.call(this, pos);
+		this.__eq__ = pos_eq;
+	}
+	return stackbox_spec_prop_pos;
+})(stackbox_dfan_property);
+
+var stackbox_spec_graph = (function(_super) {
+	__extends(stackbox_spec_graph, _super);
+	var need_prop = [
+		'@action',
+		'@loop',
+		'aniframe',
+	]
+	function stackbox_spec_graph() {
+		_super.call(this);
+	}
+	stackbox_spec_graph.prototype.init = function() {
+		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		this.goto_state('idle');
+	};
+	return stackbox_spec_graph;
+})(stackbox_dfan_automaton);
 
 /***********************************GRAPH**********************************************/
 
