@@ -30,11 +30,6 @@ var stackbox_main = (function() {
 
 /*************************************************************************************/
 
-var sbtp = {
-	'pos': stackbox_type_position,
-	'rng': stackbox_type_range,
-};
-
 var stackbox_type_position = (function() {
 	function stackbox_type_position(x, y, z) {
 		this.x = x;
@@ -142,7 +137,7 @@ var stackbox_type_range = (function() {
 	};
 	stackbox_type_range.prototype.len = function(dim) {
 		if(dim != undefined) {
-			return this.bot.tuple[dim] - this.top.tuple[dim];
+			return this.bot.tuple()[dim] - this.top.tuple()[dim];
 		} else {
 			var _z = null;
 			if(this.dim() == 3)
@@ -224,6 +219,11 @@ var stackbox_type_range = (function() {
 	};
 	return stackbox_type_range;
 })();
+
+var sbtp = {
+	'pos': stackbox_type_position,
+	'rng': stackbox_type_range,
+};
 
 /*************************************************************************************/
 
@@ -506,7 +506,7 @@ var stackbox_dfan_automaton = (function() {
 		this._props_info[name] = prop_info;
 	};
 	stackbox_dfan_automaton.prototype.remove_prop = function(name) {
-		if(!(name in this._props_info) return false;
+		if(!(name in this._props_info)) return false;
 		var prop_info = this._props_info[name];
 		for(var i = 0; i < this.handled_trigger.length; i++) {
 			var hk = this.handled_trigger[i];
@@ -578,7 +578,7 @@ var stackbox_graph_box = (function() {
 		if(typeof(idx) == 'number') {
 			if(idx < this.win_start || idx >= this.win_start + this.win_deep)
 				return null;
-			layer = this.dynamic_layers[idx - win_start];
+			layer = this.dynamic_layers[idx - this.win_start];
 		} else {
 			layer = this.static_layers[idx];
 		}
@@ -634,6 +634,13 @@ var stackbox_graph_box = (function() {
 			}
 		}
 		this.win_start = win_dst;
+	};
+	stackbox_graph_box.prototype.set_static_layer = function(idx, layer) {
+		if(!layer) {
+			delete this.static_layers[idx];
+		} else {
+			this.static_layers[idx] = layer;
+		}
 	};
 	return stackbox_graph_box;
 })();
@@ -734,7 +741,7 @@ var stackbox_graph_layer_dynamic = (function() {
 })();
 
 var stackbox_graph_camera = (function() {
-	function stackbox_graph_camera(box, range, deep, order) {
+	function stackbox_graph_camera(box, range, order) {
 		this.box = box;
 		this.surfaces = {
 			"static": {},
@@ -750,7 +757,7 @@ var stackbox_graph_camera = (function() {
 			"static": {},
 			"dynamic": {},
 		};
-		this.init_screen();
+		this.init_surfaces();
 	}
 	stackbox_graph_camera.prototype.win_start = function() {
 		return this.box.z2layer(this.range.top.z)[0];
@@ -766,12 +773,12 @@ var stackbox_graph_camera = (function() {
 				for(var j = 0; j < this.win_deep; j++) {
 					surface = new stackbox_graph_surface();
 					this.surfaces.dynamic.push(surface);
-					stackbox_graph_system.append_ctx(surface);
+					stackbox_graph_system.append_ctx(surface.ctx);
 				}
 			} else {
 				surface = new stackbox_graph_surface();
 				this.surfaces.static[key] = surface;
-				stackbox_graph_system.append_ctx(surface);
+				stackbox_graph_system.append_ctx(surface.ctx);
 			}
 		}
 	};
@@ -994,16 +1001,56 @@ var stackbox_graph_system = {
 		return ctx.canvas;
 	},
 	append_ctx: function(ctx) {
-		screen_div.appendChild(ctx.canvas);
+		this.screen_div.appendChild(ctx.canvas);
 	},
 	blit: function(src_ctx, src_rng, dst_ctx, dst_pos) {
-		dst_ctx.drawImage(src_ctx, src_rng.top.x, src_rng.top.y, src_rng.len(0), src_rng.len(1), dst_pos.x, dst_pos.y);
+		var w = src_rng.len(0);
+		var h = src_rng.len(1)
+		dst_ctx.drawImage(src_ctx.canvas, src_rng.top.x, src_rng.top.y, w, h, dst_pos.x, dst_pos.y, w, h);
 	},
 	clear: function(ctx, rng) {
 		ctx.clearRect(rng.top.x, rng.top.y, rng.len(0), rng.len(1));
 	},
 	reset: function(ctx) {
 		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+	},
+	set_fill_style: function(ctx, style) {
+		ctx.fillStyle = style;
+	},
+	set_stroke_style: function(ctx, style) {
+		ctx.strokeStyle = style;
+	},
+	draw_text: function(ctx, pos, text, font, align, baseline, width, stroke, rect) {
+		if(!font) font = '20px Arial';
+		if(!align) align = 'left';
+		if(!baseline) baseline = 'top';
+		ctx.save();
+		ctx.font = font;
+		ctx.textAlign = align;
+		ctx.textBaseline = baseline;
+		if(!width) {
+			if(!stroke)
+				ctx.fillText(text, pos.x, pos.y);
+			else
+				ctx.strokeText(text, pos.x, pos.y);
+		} else {
+			if(!stroke)
+				ctx.fillText(text, pos.x, pos.y, width);
+			else
+				ctx.strokeText(text, pos.x, pos.y, width);
+		}
+		if(rect && !width) {
+			var txt_width =  ctx.measureText(text).width;
+			var txt_height = font.split(' ')[0].split('px')[0];
+			ctx.strokeRect(pos.x, pos.y, txt_width, txt_height);
+		}
+		ctx.restore();
+	},
+	draw_rect: function(ctx, rng, stroke) {
+		if(!stroke)
+			ctx.fillRect(rng.top.x, rng.top.y, rng.len(0), rng.len(1));
+		else
+			ctx.strokeRect(rng.top.x, rng.top.y, rng.len(0), rng.len(1));
 	},
 };
 
@@ -1061,7 +1108,36 @@ var stackbox_util = {
 	},
 }.init();
 
+/*************************************************************************************/
+
+function test1() {
+	stackbox_graph_system.screen_div = document.getElementById('sb_screen');
+	stackbox_graph_system.screen_width = 600;
+	stackbox_graph_system.screen_height = 500;
+	var t_surf_rng = new sbtp['rng'](new sbtp['pos'](0, 0), new sbtp['pos'](200, 100));
+	var t_surf = new stackbox_graph_surface(t_surf_rng.len(0), t_surf_rng.len(1));
+	//stackbox_graph_system.draw_text(t_surf.ctx, t_surf_rng.top, 'Hello World!');
+	//stackbox_graph_system.draw_rect(t_surf.ctx, t_surf_rng, true);
+	stackbox_graph_system.draw_text(t_surf.ctx, t_surf_rng.top, 'Hello World!', null, null, null, null, null, true);
+	var t_frame = new stackbox_graph_frame(t_surf, t_surf_rng);
+	var box = new stackbox_graph_box(6);
+	box.layer_load = function(z, tp, box) {
+		console.log('load layer:', z, tp);
+		return new stackbox_graph_layer();
+	};
+	box.move_to(0, 'stand');
+	box.set_static_layer('bg', new stackbox_graph_layer());
+	var camera = new stackbox_graph_camera(box,
+		new sbtp['rng'](new sbtp['pos'](0, 0, 0), new sbtp['pos'](600, 500, 2)),
+		['dynamic', 'bg']);
+	box.draw(t_frame, new sbtp['pos'](0, 0, 0), 'stand');
+	camera.update();
+	//stackbox_graph_system.set_fill_style(camera.surfaces.dynamic[0].ctx, 'red');
+	//stackbox_graph_system.draw_text(camera.surfaces.dynamic[0].ctx, t_surf_rng.top, 'Hello World');
+};
+
 $(document).ready(function() {
 	console.log('ready');
+	test1();
 	console.log('done');
 });
