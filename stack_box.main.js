@@ -362,7 +362,7 @@ var stackbox_dfan_property = (function() {
 			var r = this._hooks.invoke(HK_SET, val, this._value, this);
 			if(r != undefined)
 				val = r;
-			this._hooks_lock.lock(HK_SET);
+			this._hooks_lock.unlock(HK_SET);
 		}
 		if(!this._hooks_lock.check(HK_CHANGE)) {
 			if(!this.__eq__(this._value, val)) {
@@ -377,10 +377,10 @@ var stackbox_dfan_property = (function() {
 		return val;
 	};
 	stackbox_dfan_property.prototype.hook = function(hk, func) {
-		return this._hook.add(hk, func);
+		return this._hooks.add(hk, func);
 	};
 	stackbox_dfan_property.prototype.dishook = function(hid) {
-		return this._hook.remove(hid);
+		return this._hooks.remove(hid);
 	};
 	stackbox_dfan_property.prototype.islocked = function(hk) {
 		return this._hooks_lock.check(hk);
@@ -393,19 +393,18 @@ var stackbox_dfan_automaton = (function() {
 	var HK_SET = 'set';
 	var HK_CHANGE = 'change';
 	var SYM_TRIG = '*';
+	var SYM_TRIG_SPLIT = ':';
 	var SYM_IMPT = '@';
 	function stackbox_dfan_automaton() {
 		this._props_info = {};
-		this._state_func = null;
 	}
 	stackbox_dfan_automaton.prototype.handled_trigger = [
 		//HK_GET, HK_SET, HK_CHANGE
 		HK_CHANGE
 	];
 	stackbox_dfan_automaton.prototype._prop_handler = function(name, trigger) {
-		if(!this._state_func) return;
+		if(!(trigger in this._props_info[name].triggers)) return;
 		var args = Array.prototype.slice.call(arguments, 2);
-		if(this._props_info[name].triggers.indexOf(trigger) < 0) return;
 		var info = {
 			'name': name,
 			'trigger': trigger,
@@ -424,45 +423,120 @@ var stackbox_dfan_automaton = (function() {
 			default:
 				return;
 		}
-		return this._state_func(info);
+		if(this._props_info[name].triggers[trigger])
+			return this._props_info[name].triggers[trigger].call(this, info);
 	};
 	stackbox_dfan_automaton.prototype._clear_triggers = function() {
 		if(this._last_trigs) {
 			for(var i = 0; i < this._last_trigs.length; i++) {
-				this._props_info[this._last_trigs[i]].triggers = [];
+				this._props_info[this._last_trigs[i]].triggers = {};
 			}
 		}
-	};
-	stackbox_dfan_automaton.prototype._set_triggers = function(trig) {
-		this._clear_triggers();
 		this._last_trigs = [];
-		for(var i = 0; i < trig.length; i++) {
-			var prop_trig = trig[i];
+	};
+	stackbox_dfan_automaton.prototype._set_triggers = function(trigs, func) {
+		for(var i = 0; i < trigs.length; i++) {
+			var prop_trig = trigs[i];
 			var prop = prop_trig;
 			if(prop_trig[0] == SYM_TRIG) {
-				var _splt = prop_trig.slice(1).split(':');
+				var _splt = prop_trig.slice(1).split(SYM_TRIG_SPLIT);
 				var prop = _splt[0];
 				var trig = _splt[1];
 				if(this.handled_trigger.indexOf(trig) < 0) continue;
-				this._props_info[prop].push(trig);
+				this._props_info[prop].triggers[trig] = func;
 			} else {
-				this._props_info[prop].triggers = this.handled_trigger;//.slice();
+				for(var j = 0; j < this.handled_trigger.length; j++) {
+					this._props_info[prop].triggers[this.handled_trigger[j]] = func;
+				}
 			}
 			if(this._last_trigs.indexOf(prop) < 0)
 				this._last_trigs.push(prop);
 		}
 	};
 	stackbox_dfan_automaton.prototype._get_state_func = function(state) {
-		return this.__proto__['state_' + state];
+		return this['state_' + state];
 	};
 	stackbox_dfan_automaton.prototype._get_state_trig = function(state) {
-		var r = this.__proto__['state_' + state + '_trig'];
-		if(r == undefined) r = [];
+		var r = this['statrig_' + state];
+		if(r == undefined) r = keys(this._props_info);//this.prop_list();//[];
 		return r;
 	};
+	var INTMAP_ST_ALL = '__all__';
+	var INTMAP_ST_EX = '__ex__';
+	stackbox_dfan_automaton.prototype._init_interrupts = function() {
+		var _r_st = {};
+		var _r_int = {};
+		for(var key in this) {
+			if(key.slice(0, 10) == 'interrupt_') {
+				var int_cmds = key.slice(10).split('_');
+				var int_name = int_cmds[0];
+				var sta_no_set = true;
+				for(var i = 1; i < int_cmds.length; i++) {
+					var cmd = int_cmds[i].split('$');
+					switch(cmd[0]) {
+						case 'st':
+							for(var j = 1; j < cmd.length; j++) {
+								var sta_name = cmd[j];
+								if(!(sta_name in _r_st)) _r_st[sta_name] = [];
+								_r_st[sta_name].push(int_name);
+							}
+							sta_no_set = false;
+							break;
+						case 'ex':
+							for(var j = 1; j < cmd.length; j++) {
+								var ex_sta_name = INTMAP_ST_EX + cmd[j];
+								if(!(ex_sta_name in _r_st)) _r_st[ex_sta_name] = [];
+								_r_st[ex_sta_name].push(int_name);
+							}
+							break;
+						default:
+							continue;
+					}
+				}
+				if(sta_no_set) {
+					if(!(INTMAP_ST_ALL in _r_st)) _r_st[INTMAP_ST_ALL] = [];
+					_r_st[INTMAP_ST_ALL].push(int_name);
+				}
+				_r_int[int_name] = {
+					'func': this[key],
+					'trig': this['inttrig_' + int_name],
+				};
+			}
+		}
+		return {
+			'interrupts': _r_int,
+			'states': _r_st,
+		};
+	};
+	stackbox_dfan_automaton.prototype._set_interrupts = function(state) {
+		if(!this._int_sta_map) {
+			this._int_sta_map = this._init_interrupts();
+		}
+		if(state in this._int_sta_map.states) {
+			var _st_q = this._int_sta_map.states[state];
+			for(var i = 0; i < _st_q.length; i++) {
+				var _int = this._int_sta_map.interrupts[_st_q[i]];
+				this._set_triggers(_int.trig, _int.func);
+			}
+		}
+		if(INTMAP_ST_ALL in this._int_sta_map.states) {
+			var _st_q = this._int_sta_map.states[INTMAP_ST_ALL];
+			for(var i = 0; i < _st_q.length; i++) {
+				var _int_name = _st_q[i];
+				var _ex_sta = INTMAP_ST_EX + state;
+				if(_ex_sta in this._int_sta_map.states) {
+					if(this._int_sta_map.states[_ex_sta].indexOf(_int_name) > -1)
+						continue;
+				}
+				var _int = this._int_sta_map.interrupts[_int_name];
+				this._set_triggers(_int.trig, _int.func);
+			}
+		}
+	};
 	stackbox_dfan_automaton.prototype.goto_state = function(state) {
-		this._set_triggers(this._get_state_trig(state));
-		this._state_func = this._get_state_func(state);
+		this._clear_triggers();
+		this._set_triggers(this._get_state_trig(state), this._get_state_func(state));
+		this._set_interrupts(state);
 	};
 	stackbox_dfan_automaton.prototype.prop_islocked = function(name, trig) {
 		return this._props_info[name].prop.islocked(trig);
@@ -496,7 +570,7 @@ var stackbox_dfan_automaton = (function() {
 		var prop_info = {
 			'prop': prop,
 			'hids': {},
-			'triggers': [],
+			'triggers': {},
 		};
 		for(var i = 0; i < this.handled_trigger.length; i++) {
 			var hk = this.handled_trigger[i];
@@ -539,9 +613,10 @@ var stackbox_spec_graph = (function(_super) {
 		'@action',
 		'@loop',
 		'aniframe',
-	]
+	];
 	function stackbox_spec_graph() {
 		_super.call(this);
+		this.act_info = {};
 	}
 	stackbox_spec_graph.prototype.init = function() {
 		if(!this.prop_check(need_prop)) throw 'properties unbind';
@@ -1135,6 +1210,64 @@ function test1() {
 	//stackbox_graph_system.set_fill_style(camera.surfaces.dynamic[0].ctx, 'red');
 	//stackbox_graph_system.draw_text(camera.surfaces.dynamic[0].ctx, t_surf_rng.top, 'Hello World');
 };
+
+function test2() {
+	var inttest = (function(_super) {
+		__extends(inttest, _super);
+		var need_prop = [
+			'@aa',
+			'bb',
+			'cc',
+		];
+		function inttest() {
+			_super.call(this);
+		}
+		inttest.prototype.handled_trigger = [
+			'get', 'set', 'change'
+		];
+		inttest.prototype.init = function() {
+			this.prop_check(need_prop);
+			this.goto_state('start');
+		};
+		inttest.prototype.statrig_start = ['@aa', 'bb'];
+		inttest.prototype.state_start = function(info) {
+			console.log('start', info, this);
+			this.goto_state('end');
+		};
+		inttest.prototype.statrig_end = ['bb'];
+		inttest.prototype.state_end = function(info) {
+			console.log('end', info, this);
+			this.goto_state('start');
+		};
+		inttest.prototype.statrig_int = ['@aa'];
+		inttest.prototype.state_int = function(info) {
+			console.log('int', info, this);
+			this.goto_state('start');
+		};
+		inttest.prototype.inttrig_int1 = ['cc'];
+		inttest.prototype.interrupt_int1 = function(info) {
+			console.log('int1', info, this);
+			this.goto_state('int');
+		};
+		inttest.prototype.inttrig_int2 = ['*@aa:get', '*bb:set'];
+		inttest.prototype.interrupt_int2_st$start = function(info) {
+			console.log('int2', info, this);
+			this.goto_state('int');
+		};
+		inttest.prototype.inttrig_int3 = ['cc', '*bb:set'];
+		inttest.prototype.interrupt_int3_ex$start$int = function(info) {
+			console.log('int3', info, this);
+			this.goto_state('int');
+		};
+		return inttest;
+	})(stackbox_dfan_automaton);
+	var t = new inttest();
+	t.bind_prop('@aa', new stackbox_dfan_property(123));
+	t.bind_prop('bb', new stackbox_dfan_property(123));
+	t.bind_prop('cc', new stackbox_dfan_property(123));
+	t.init();
+	return t;
+}
 
 $(document).ready(function() {
 	console.log('ready');
