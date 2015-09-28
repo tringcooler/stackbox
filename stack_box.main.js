@@ -709,8 +709,8 @@ var stackbox_spec_graph = (function(_super) {
 				if(fi.loop) {
 					this.prop_set('%aniframe', 0);
 				} else {
-					this.prop_set('#action', 'idle');
 					this.prop_set('#done', true);
+					this.goto_state('idle');
 					return;
 				}
 			} else {
