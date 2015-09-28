@@ -395,6 +395,7 @@ var stackbox_dfan_automaton = (function() {
 	var SYM_TRIG = '*';
 	var SYM_TRIG_SPLIT = ':';
 	var SYM_IMPT = '@';
+	var SYM_EXPT = '#';
 	function stackbox_dfan_automaton() {
 		this._props_info = {};
 	}
@@ -537,6 +538,7 @@ var stackbox_dfan_automaton = (function() {
 		this._clear_triggers();
 		this._set_triggers(this._get_state_trig(state), this._get_state_func(state));
 		this._set_interrupts(state);
+		console.log('goto', state);
 	};
 	stackbox_dfan_automaton.prototype.prop_islocked = function(name, trig) {
 		return this._props_info[name].prop.islocked(trig);
@@ -546,6 +548,10 @@ var stackbox_dfan_automaton = (function() {
 	};
 	stackbox_dfan_automaton.prototype.prop_set = function(name, val) {
 		if(name[0] == SYM_IMPT) return; //Read only property (import from extra)
+		return this._props_info[name].prop.set(val);
+	};
+	stackbox_dfan_automaton.prototype.prop_input = function(name, val) {
+		if(name[0] != SYM_IMPT) return;
 		return this._props_info[name].prop.set(val);
 	};
 	stackbox_dfan_automaton.prototype.prop_list = function(own) {
@@ -588,6 +594,10 @@ var stackbox_dfan_automaton = (function() {
 		}
 		return (delete this._props_info[name]);
 	};
+	stackbox_dfan_automaton.prototype.export_prop = function(name) {
+		if(name[0] != SYM_EXPT) return;
+		return this._props_info[name].prop;
+	};
 	return stackbox_dfan_automaton;
 })();
 
@@ -610,9 +620,10 @@ var stackbox_spec_prop_pos = (function(_super) {
 var stackbox_spec_graph = (function(_super) {
 	__extends(stackbox_spec_graph, _super);
 	var need_prop = [
-		'@action',
-		'@loop',
+		'#action',
 		'aniframe',
+		'#loop',
+		'@tick',
 	];
 	function stackbox_spec_graph() {
 		_super.call(this);
@@ -621,6 +632,26 @@ var stackbox_spec_graph = (function(_super) {
 	stackbox_spec_graph.prototype.init = function() {
 		if(!this.prop_check(need_prop)) throw 'properties unbind';
 		this.goto_state('idle');
+	};
+	stackbox_spec_graph.prototype.statrig_idle = ['@tick'];
+	stackbox_spec_graph.prototype.state_idle = function(info) {
+		this.prop_set('#action', 'idle');
+	};
+	stackbox_spec_graph.prototype.inttrig_actset = ['#action'];
+	stackbox_spec_graph.prototype.interrupt_actset = function(info) {
+		this.prop_set('aniframe', 0);
+		this.set_frame(info.val, 0);
+		this.goto_state('action');
+	};
+	stackbox_spec_graph.prototype.statrig_action = ['@tick'];
+	stackbox_spec_graph.prototype.state_action = function(info) {
+		var f = this.prop_get('aniframe') + 1;
+		this.prop_set('aniframe', f);
+		this.set_frame(this.prop_get('#action'), f);
+		this.goto_state('action');
+	};
+	stackbox_spec_graph.prototype.set_frame = function(act, f) {
+		console.log('set', act, f);
 	};
 	return stackbox_spec_graph;
 })(stackbox_dfan_automaton);
@@ -1209,7 +1240,7 @@ function test1() {
 	camera.update();
 	//stackbox_graph_system.set_fill_style(camera.surfaces.dynamic[0].ctx, 'red');
 	//stackbox_graph_system.draw_text(camera.surfaces.dynamic[0].ctx, t_surf_rng.top, 'Hello World');
-};
+}
 
 function test2() {
 	var inttest = (function(_super) {
@@ -1267,6 +1298,32 @@ function test2() {
 	t.bind_prop('cc', new stackbox_dfan_property(123));
 	t.init();
 	return t;
+}
+
+function test3() {
+	var inttest = (function(_super) {
+		__extends(inttest, _super);
+		function inttest() {
+			_super.call(this);
+		}
+		return inttest;
+	})(stackbox_spec_graph);
+	var sg = new inttest();
+	sg.bind_prop('#action', new stackbox_dfan_property('none'));
+	sg.bind_prop('aniframe', new stackbox_dfan_property(0));
+	sg.bind_prop('#loop', new stackbox_dfan_property(false));
+	var tck = new stackbox_dfan_property(0);
+	sg.bind_prop('@tick', tck);
+	var act = sg.export_prop('#action');
+	sg.init();
+	tck.set(1);
+	tck.set(2);
+	act.set('stand');
+	tck.set(3);
+	tck.set(4);
+	act.set('idle');
+	tck.set(5);
+	return [sg, tck, act];
 }
 
 $(document).ready(function() {
