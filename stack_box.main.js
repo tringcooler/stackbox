@@ -95,7 +95,29 @@ var stackbox_type_position = (function() {
 })();
 
 var stackbox_type_range = (function() {
-	function stackbox_type_range(top, bot) {
+	function stackbox_type_range() {
+		argv = stackbox_util.parse_argv(arguments, {
+			"pos": ["top", "bot"],
+			"val2": ["topx", "topy", "botx", "boty"],
+			"val3": ["topx", "topy", "topz", "botx", "boty", "botz"],
+		});
+		var top, bot;
+		switch(argv.patt) {
+			case 'pos':
+				top = argv.top;
+				bot = argv.bot;
+				break;
+			case 'val2':
+				top = new stackbox_type_position(argv.topx, argv.topy);
+				bot = new stackbox_type_position(argv.botx, argv.boty);
+				break;
+			case 'val3':
+				top = new stackbox_type_position(argv.topx, argv.topy, argv.topz);
+				bot = new stackbox_type_position(argv.botx, argv.boty, argv.botz);
+				break;
+			default:
+				throw 'args error';
+		}
 		if(top.dim() != bot.dim()) throw 'range assert';
 		if(top.x > bot.x || top.y > bot.y || (bot.z != null && top.z > bot.z)) throw 'range assert';
 		this.top = top;
@@ -220,6 +242,25 @@ var stackbox_type_range = (function() {
 	return stackbox_type_range;
 })();
 
+var stackbox_type_collection = (function() {
+	var g_cid = 1;
+	function stackbox_type_collection() {
+		this.vals = {};
+	}
+	stackbox_type_collection.prototype.add = function(val) {
+		this.vals[g_cid] = val;
+		return g_cid++;
+	};
+	stackbox_type_collection.prototype.remove = function(cid) {
+		if(!(cid in this.vals)) return false;
+		return (delete this.vals[cid]);
+	};
+	stackbox_type_collection.prototype.length = function() {
+		return Object.keys(this.vals).length;
+	};
+	return stackbox_type_collection;
+})();
+
 var sbtp = {
 	'pos': stackbox_type_position,
 	'rng': stackbox_type_range,
@@ -308,6 +349,12 @@ var stackbox_dfan_hooks = (function() {
 		if(!this.hooks.hasOwnProperty(hk)) return false;
 		return this.hooks[hk].remove(fid);
 	};
+	stackbox_dfan_hooks.prototype.results_handle = function(hk, func) {
+		if(!this.hooks.hasOwnProperty(hk)) return;
+		if(func != undefined) 
+			this.hooks[hk].results = func;
+		return this.hooks[hk].results;
+	};
 	return stackbox_dfan_hooks;
 })();
 
@@ -379,6 +426,9 @@ var stackbox_dfan_property = (function() {
 	stackbox_dfan_property.prototype.hook = function(hk, func) {
 		return this._hooks.add(hk, func);
 	};
+	stackbox_dfan_property.prototype.results_handle = function(hk, func) {
+		return this._hooks.results_handle(hk, func);
+	};
 	stackbox_dfan_property.prototype.dishook = function(hid) {
 		return this._hooks.remove(hid);
 	};
@@ -423,7 +473,8 @@ var stackbox_dfan_automaton = (function() {
 				info['prop'] = args[2];
 				break;
 			default:
-				return;
+				info['args'] = args;
+				break;
 		}
 		if(this._props_info[name].triggers[trigger])
 			return this._props_info[name].triggers[trigger].call(this, info);
@@ -639,6 +690,73 @@ var stackbox_spec_prop_pos = (function(_super) {
 		this.__eq__ = pos_eq;
 	}
 	return stackbox_spec_prop_pos;
+})(stackbox_dfan_property);
+
+var stackbox_spec_range_collection = (function() {
+	function stackbox_spec_range_collection(ranges) {
+		if(ranges == undefined)
+			this.rngs = [];
+		else if(ranges instanceof Array)
+			this.rngs = ranges;
+		else
+			this.rngs = [ranges];
+	}
+	stackbox_spec_range_collection.prototype.add = function(ranges) {
+		this.rngs = this.rngs.concat(ranges);
+	};
+	return stackbox_spec_range_collection;
+})();
+
+var stackbox_spec_prop_range = (function(_super) {
+	__extends(stackbox_spec_prop_range, _super);
+	var HK_MOVE = 'rng_move';
+	var HK_TRANS = 'rng_trans';
+	var HK_COLLISION = 'rng_collision';
+	function stackbox_spec_prop_range(val, collection) {
+		_super.call(this, val);
+		this._collection = collection;
+	}
+	stackbox_spec_prop_range.prototype.set_range = function() {
+		argv = stackbox_util.parse_argv(arguments, {
+			"pos": ["pos"],
+			"range": ["top", "bot"],
+		});
+		var changed = false;
+		switch(argv.patt) {
+			case 'pos':
+				if(!argv.pos.eq(this._value.top)) {
+					this._value.move_to(argv.pos);
+					changed = true;
+				}
+				break;
+			case 'range':
+				if(!argv.top.eq(this._value.top)) {
+					this._value.top = argv.top;
+					changed = true;
+				}
+				if(!argv.bot.eq(this._value.bot)) {
+					this._value.bot = argv.bot;
+					changed = true;
+				}
+				break;
+			default:
+				throw 'args error';
+		}
+		if(changed) {
+			this.check_collision();
+		}
+	};
+	stackbox_spec_prop_range.prototype.check_collision = function() {
+		for(var cid in this._collection.vals) {
+			var t_rng = this._collection.vals[cid];
+			if(this._value.collision_with(t_rng) {
+				this._hooks_lock.lock(HK_COLLISION);
+				var r = this._hooks.invoke(HK_COLLISION, t_rng, this._value, this);
+				this._hooks_lock.unlock(HK_COLLISION);
+			}
+		}
+	};
+	return stackbox_spec_prop_range;
 })(stackbox_dfan_property);
 
 var stackbox_spec_graph = (function(_super) {
@@ -1147,12 +1265,13 @@ var stackbox_graph_frame = (function() {
 })();
 
 var stackbox_graph_sprite = (function() {
-	function stackbox_graph_sprite(img, rect, size) {
-		this.surface = new stackbox_graph_surface(
-			stackbox_graph_system.image_ctx(img)
-		);
-		
+	function stackbox_graph_sprite(surf, rect_size, grid_size) {
+		this.surface = surf;
+		this.rect = rect_size;
+		this.grid = grid_size;
 	}
+	stackbox_graph_sprite.prototype.init_frames = function() {
+	};
 	return stackbox_graph_sprite;
 })();
 
