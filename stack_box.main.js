@@ -692,21 +692,6 @@ var stackbox_spec_prop_pos = (function(_super) {
 	return stackbox_spec_prop_pos;
 })(stackbox_dfan_property);
 
-var stackbox_spec_range_collection = (function() {
-	function stackbox_spec_range_collection(ranges) {
-		if(ranges == undefined)
-			this.rngs = [];
-		else if(ranges instanceof Array)
-			this.rngs = ranges;
-		else
-			this.rngs = [ranges];
-	}
-	stackbox_spec_range_collection.prototype.add = function(ranges) {
-		this.rngs = this.rngs.concat(ranges);
-	};
-	return stackbox_spec_range_collection;
-})();
-
 var stackbox_spec_prop_range = (function(_super) {
 	__extends(stackbox_spec_prop_range, _super);
 	var HK_MOVE = 'rng_move';
@@ -749,7 +734,7 @@ var stackbox_spec_prop_range = (function(_super) {
 	stackbox_spec_prop_range.prototype.check_collision = function() {
 		for(var cid in this._collection.vals) {
 			var t_rng = this._collection.vals[cid];
-			if(this._value.collision_with(t_rng) {
+			if(this._value.collision_with(t_rng)) {
 				this._hooks_lock.lock(HK_COLLISION);
 				var r = this._hooks.invoke(HK_COLLISION, t_rng, this._value, this);
 				this._hooks_lock.unlock(HK_COLLISION);
@@ -855,6 +840,117 @@ var stackbox_spec_graph = (function(_super) {
 		this.goto_state('action');
 	};
 	return stackbox_spec_graph;
+})(stackbox_dfan_automaton);
+
+var stackbox_spec_prop_controller = (function(_super) {
+	__extends(stackbox_spec_prop_controller, _super);
+	var ctrl_eq = function(a, b) {
+		return a[0] == b[0] && a[1] == b[1];
+	};
+	function stackbox_spec_prop_controller() {
+		_super.call(this, [false, 0]);
+		this.__eq__ = ctrl_eq;
+		stackbox_keyboard_system.bind(this._handler.bind(this));
+	}
+	stackbox_spec_prop_controller.prototype._handler = function(down, key) {
+		this.set([down, key]);
+	};
+	return stackbox_spec_prop_controller;
+})(stackbox_dfan_property);
+
+var stackbox_spec_prop_hotkey = (function(_super) {
+	__extends(stackbox_spec_prop_hotkey, _super);
+	var HK_SET = 'set';
+	var HK_CHANGE = 'change';
+	var HK_KEYDOWN = 'key_down';
+	var HK_KEYUP = 'key_up';
+	function stackbox_spec_prop_hotkey() {
+		_super.call(this, false);
+	}
+	stackbox_spec_prop_hotkey.prototype.set = function(val) {
+		if(!this._hooks_lock.check(HK_SET)) {
+			this._hooks_lock.lock(HK_SET);
+			var r = this._hooks.invoke(HK_SET, val, this._value, this);
+			if(r != undefined)
+				val = r;
+			this._hooks_lock.unlock(HK_SET);
+		}
+		if(!this.__eq__(this._value, val)) {
+			if(!this._hooks_lock.check(HK_CHANGE)) {
+				this._hooks_lock.lock(HK_CHANGE);
+				var r = this._hooks.invoke(HK_CHANGE, val, this._value, this);
+				if(r != undefined)
+					val = r;
+				this._hooks_lock.unlock(HK_CHANGE);
+			}
+			if(val /*== true*/) {
+				if(!this._hooks_lock.check(HK_KEYDOWN)) {
+					this._hooks_lock.lock(HK_KEYDOWN);
+					var r = this._hooks.invoke(HK_KEYDOWN, this);
+					this._hooks_lock.unlock(HK_KEYDOWN);
+				}
+			} else {
+				if(!this._hooks_lock.check(HK_KEYUP)) {
+					this._hooks_lock.lock(HK_KEYUP);
+					var r = this._hooks.invoke(HK_KEYUP, this);
+					this._hooks_lock.unlock(HK_KEYUP);
+				}
+			}
+		}
+		this._value = val;
+		return val;
+	};
+	return stackbox_spec_prop_hotkey;
+})(stackbox_dfan_property);
+
+var stackbox_spec_control = (function(_super) {
+	__extends(stackbox_spec_control, _super);
+	var need_prop = [
+		'@controller',
+	];
+	var g_hkid = 1;
+	function stackbox_spec_control() {
+		_super.call(this);
+		this.keymap = {};
+	}
+	stackbox_spec_control.prototype.add_key = function(key) {
+		if(key in this.keymap) return this.keymap[key];
+		var hotkey = new stackbox_spec_prop_hotkey();
+		this.keymap[key] = hotkey;
+		return hotkey;
+	};
+	stackbox_spec_control.prototype.remove_key = function(key) {
+		if(!(key in this.keymap)) return false;
+		return (delete this.keymap[key]);
+	};
+	stackbox_spec_control.prototype.change_key = function(key1, key2) {
+		if(key1 in this.keymap) {
+			var _k = this.keymap[key1];
+			if(key2 in this.keymap) {
+				this.keymap[key1] = this.keymap[key2];
+			} else {
+				delete this.keymap[key1];
+			}
+			this.keymap[key2] = _k;
+		} else {
+			if(key2 in this.keymap) {
+				this.keymap[key1] = this.keymap[key2];
+				delete this.keymap[key2];
+			}
+		}
+	};
+	stackbox_spec_control.prototype.init = function() {
+		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		this.goto_state('ready');
+	};
+	stackbox_spec_control.prototype.statrig_ready = ['@controller'];
+	stackbox_spec_control.prototype.state_ready = function(info) {
+		var keystat = info.val;
+		if(keystat[1] in this.keymap) {
+			this.keymap[keystat[1]].set(keystat[0]);
+		}
+	};
+	return stackbox_spec_control;
 })(stackbox_dfan_automaton);
 
 /***********************************GRAPH**********************************************/
@@ -1419,6 +1515,25 @@ var stackbox_mainloop_system = {
 
 /*************************************************************************************/
 
+var stackbox_keyboard_system = {
+	bind: function(func) {
+		document.addEventListener('keydown', function (event) {
+			//console.log('keydown', event.which);
+			func(true, event.which);
+			event.preventDefault();
+			return false;
+		}, false);
+		document.addEventListener('keyup', function (event) {
+			//console.log('keyup', event.which);
+			func(false, event.which);
+			event.preventDefault();
+			return false;
+		}, false);
+	},
+};
+
+/*************************************************************************************/
+
 var stackbox_util = {
 	parse_argv: function(argv, argtab) {
 		var rslt = {};
@@ -1615,8 +1730,74 @@ function test3() {
 	return [sg, tck, act, dc];
 }
 
+function test_key_loop_stepbystep() {
+	var foo = {};
+	var bar = {};
+	var foobar = {};
+	foo[1000] = 123;
+	bar['aaa'] = 456;
+	foobar[2000] = 321;
+	foobar['bbb'] = 654;
+	for(var k in foo) {
+		console.log(k);
+	}
+	for(var k in bar) {
+		console.log(k);
+	}
+	for(var k in foobar) {
+		console.log(k);
+	}
+}
+
+function test4() {
+	var inttest = (function(_super) {
+		__extends(inttest, _super);
+		function inttest() {
+			_super.call(this);
+		}
+		inttest.prototype.state_idle = function(info) {
+			console.log('idle', info);
+		};
+		inttest.prototype.inttrig_int1 = ['*@ka:key_down'];
+		inttest.prototype.interrupt_int1 = function(info) {
+			console.log('ka down', info);
+		};
+		inttest.prototype.inttrig_int2 = ['*@ka:key_up'];
+		inttest.prototype.interrupt_int2 = function(info) {
+			console.log('ka up', info);
+		};
+		inttest.prototype.inttrig_int3 = ['*@kb:key_down'];
+		inttest.prototype.interrupt_int3 = function(info) {
+			console.log('kb down', info);
+		};
+		inttest.prototype.inttrig_int4 = ['*@kb:key_up'];
+		inttest.prototype.interrupt_int4 = function(info) {
+			console.log('kb up', info);
+		};
+		return inttest;
+	})(stackbox_dfan_automaton);
+	var pl = new inttest();
+	var kb = new stackbox_spec_control();
+	var kp = new stackbox_spec_prop_controller();
+	kb.bind_prop('@controller', kp);
+	kb.init();
+	pl.bind_prop('@ka', kb.add_key(65), ['key_down', 'key_up']);
+	pl.bind_prop('@kb', kb.add_key(66), ['key_down', 'key_up']);
+	pl.goto_state('idle');
+}
+
 $(document).ready(function() {
 	console.log('ready');
 	test1();
 	console.log('done');
 });
+
+// prevent ctrl+R and F5
+/*$(document).bind('keydown keyup', function(e) {
+    if(e.which === 116) {
+       return false;
+    }
+    if(e.which === 82 && e.ctrlKey) {
+       return false;
+    }
+});*/
