@@ -98,6 +98,7 @@ var stackbox_type_range = (function() {
 	function stackbox_type_range() {
 		argv = stackbox_util.parse_argv(arguments, {
 			"pos": ["top", "bot"],
+			"poslen": ["top", "len", "dummy"],
 			"val2": ["topx", "topy", "botx", "boty"],
 			"val3": ["topx", "topy", "topz", "botx", "boty", "botz"],
 		});
@@ -106,6 +107,10 @@ var stackbox_type_range = (function() {
 			case 'pos':
 				top = argv.top;
 				bot = argv.bot;
+				break;
+			case 'poslen':
+				top = argv.top;
+				bot = argv.len.plus(top);
 				break;
 			case 'val2':
 				top = new stackbox_type_position(argv.topx, argv.topy);
@@ -680,17 +685,20 @@ var stackbox_dfan_automaton = (function() {
 
 var stackbox_spec_prop = stackbox_dfan_property;
 
-var stackbox_spec_prop_pos = (function(_super) {
-	__extends(stackbox_spec_prop_pos, _super);
+var stackbox_spec_prop_eqtp = (function(_super) {
+	__extends(stackbox_spec_prop_eqtp, _super);
 	var pos_eq = function(a, b) {
 		return a.eq(b);
 	};
-	function stackbox_spec_prop_pos(pos) {
-		_super.call(this, pos);
+	function stackbox_spec_prop_eqtp(val) {
+		_super.call(this, val);
 		this.__eq__ = pos_eq;
 	}
-	return stackbox_spec_prop_pos;
+	return stackbox_spec_prop_eqtp;
 })(stackbox_dfan_property);
+
+var stackbox_spec_prop_pos = stackbox_spec_prop_eqtp;
+var stackbox_spec_prop_trans = stackbox_spec_prop_eqtp;
 
 var stackbox_spec_prop_range = (function(_super) {
 	__extends(stackbox_spec_prop_range, _super);
@@ -744,8 +752,8 @@ var stackbox_spec_prop_range = (function(_super) {
 	return stackbox_spec_prop_range;
 })(stackbox_dfan_property);
 
-var stackbox_spec_graph = (function(_super) {
-	__extends(stackbox_spec_graph, _super);
+var stackbox_spec_actions = (function(_super) {
+	__extends(stackbox_spec_actions, _super);
 	var need_prop = [
 		'#action',
 		'%aniframe',
@@ -753,11 +761,11 @@ var stackbox_spec_graph = (function(_super) {
 		'@done',
 		'@tick',
 	];
-	function stackbox_spec_graph() {
+	function stackbox_spec_actions() {
 		_super.call(this);
 		this.act_info = {};
 	}
-	stackbox_spec_graph.prototype.init = function() {
+	stackbox_spec_actions.prototype.init = function() {
 		if(!this.actions_check()) throw 'action uninited';
 		this.bind_prop('#action', new stackbox_spec_prop('__none__'));
 		this.bind_prop('%aniframe', 0);
@@ -765,7 +773,7 @@ var stackbox_spec_graph = (function(_super) {
 		if(!this.prop_check(need_prop)) throw 'properties unbind';
 		this.goto_state('idle');
 	};
-	stackbox_spec_graph.prototype.actions_check = function() {
+	stackbox_spec_actions.prototype.actions_check = function() {
 		/*
 		{
 			act_name: [
@@ -795,25 +803,25 @@ var stackbox_spec_graph = (function(_super) {
 		}
 		return true;
 	};
-	stackbox_spec_graph.prototype.append_action = function(name, loop) {
+	stackbox_spec_actions.prototype.append_action = function(name, loop) {
 		var frm_q = Array.prototype.slice.call(arguments, 2);
 	};
-	stackbox_spec_graph.prototype.set_frame = function(name, cnt) {
+	stackbox_spec_actions.prototype.set_frame = function(name, cnt) {
 		console.log('set', name, cnt);
 	};
-	stackbox_spec_graph.prototype.statrig_idle = ['@tick'];
-	stackbox_spec_graph.prototype.state_idle = function(info) {
+	stackbox_spec_actions.prototype.statrig_idle = ['@tick'];
+	stackbox_spec_actions.prototype.state_idle = function(info) {
 		this.prop_set('#action', 'idle');
 	};
-	stackbox_spec_graph.prototype.inttrig_actset = ['#action'];
-	stackbox_spec_graph.prototype.interrupt_actset = function(info) {
+	stackbox_spec_actions.prototype.inttrig_actset = ['#action'];
+	stackbox_spec_actions.prototype.interrupt_actset = function(info) {
 		this.prop_set('%aniframe', 0);
 		this.prop_set('%duration', 0);
 		this.set_frame(info.val, 0);
 		this.goto_state('action');
 	};
-	stackbox_spec_graph.prototype.statrig_action = ['@tick'];
-	stackbox_spec_graph.prototype.state_action = function(info) {
+	stackbox_spec_actions.prototype.statrig_action = ['@tick'];
+	stackbox_spec_actions.prototype.state_action = function(info) {
 		var delt = info.val - info.old_val;
 		if(delt < 0) throw 'tick down';
 		var af = this.prop_get('%aniframe');
@@ -839,8 +847,26 @@ var stackbox_spec_graph = (function(_super) {
 		}
 		this.goto_state('action');
 	};
-	return stackbox_spec_graph;
+	return stackbox_spec_actions;
 })(stackbox_dfan_automaton);
+
+var stackbox_spec_graph = (function(_super) {
+	__extends(stackbox_spec_graph, _super);
+	var need_prop = [
+		'@pos',
+		'#trans',
+		'%dirty',
+	];
+	function stackbox_spec_graph(sprite, box, layer) {
+		_super.call(this);
+		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		this.sprite = sprite;
+	}
+	stackbox_spec_graph.prototype.set_frame = function(name, cnt) {
+		
+	};
+	return stackbox_spec_graph;
+})(stackbox_spec_actions);
 
 var stackbox_spec_prop_controller = (function(_super) {
 	__extends(stackbox_spec_prop_controller, _super);
@@ -1317,6 +1343,9 @@ var stackbox_graph_trans = (function() {
 		}
 		return new stackbox_graph_trans(r);
 	};
+	stackbox_graph_trans.prototype.eq = function(t) {
+		return false;
+	};
 	stackbox_graph_trans.prototype.add = function(t) {
 		for(var k in t.info) {
 			switch(k) {
@@ -1361,23 +1390,125 @@ var stackbox_graph_frame = (function() {
 })();
 
 var stackbox_graph_sprite = (function() {
-	function stackbox_graph_sprite(surf, rect_size, grid_size) {
+	function stackbox_graph_sprite(surf, rect_size, actions) {
 		this.surface = surf;
 		this.rect = rect_size;
-		this.grid = grid_size;
+		this.acts = this._init_acts(actions);
 	}
-	stackbox_graph_sprite.prototype.init_frames = function() {
+	stackbox_graph_sprite.prototype._init_acts = function(acts) {
+		/*
+		acts -> acts , act | act
+		act -> name : infos
+		infos -> infos , info | info
+		info -> pos | dir pn cnt
+		dir -> "x" | "y"
+		pn -> + | -
+		cnt -> number
+		name -> string
+		pos -> (number , number)
+		acts = {
+			name: [
+				pos | brief_string , ...
+			],
+			...
+		}
+		*/
+		result = {}
+		for(var name in acts) {
+			var trans = null;
+			var pos = null;
+			var frames = [];
+			for(var i = 0; i < acts[name].length; i++) {
+				info = acts[name][i];
+				if(typeof(info) == 'string') {
+					var re_trans = /^\s*trans\s*:\s*(.*?)\s*$/;
+					var re_pos = /^\s*\(\s*(\d*)\s*,\s*(\d*)\s*\)\s*$/;
+					var re_brief = /^\s*([xy])\s*([+-])\s*(\d*)\s*$/;
+					if(re_trans) {
+						trans = new stackbox_graph_trans(re_trans[1]);
+					} else if(re_pos) {
+						pos = new stackbox_type_position(
+							parseInt(re_pos[1]), parseInt(re_pos[2])
+						);
+						frames.push(this._init_frames(pos, trans));
+					} else if(re_brief) {
+						if(!pos) throw 'pos need init.';
+						var count = parseInt(re_brief[3]);
+						var step;
+						if(re_brief[2] == '+') step = 1;
+						else step = -1;
+						for(var j = 0; j < count; j++) {
+							if(re_brief[1] == 'x') {
+								pos.x += step;
+							} else {
+								pos.y += step;
+							}
+							frames.push(this._init_frames(pos, trans));
+						}
+					}
+				} else if(info instanceof stackbox_type_position) {
+					pos = info;
+					frames.push(this._init_frames(pos, trans));
+				}
+			}
+			result[name] = frames;
+		}
+		return result;
+	};
+	stackbox_graph_sprite.prototype._init_frames = function(pos, trans) {
+		return new stackbox_graph_frame(
+			this.surface,
+			this._calc_range(pos),
+			trans
+		);
+	};
+	stackbox_graph_sprite.prototype._calc_range = function(pos) {
+		var n_pos = new stackbox_type_position(pos.x * this.rect.x, pos.y * this.rect.y);
+		return new stackbox_type_range(n_pos, this.rect, 'len-dummy');
+	}
+	stackbox_graph_sprite.prototype.frame = function(name, cnt) {
+		return this.acts[name][cnt];
 	};
 	return stackbox_graph_sprite;
 })();
 
 /*************************************************************************************/
 
-var stackbox_test_frames = (function() {
-	function stackbox_test_frames() {
+var stackbox_test_sprite = (function(_super) {
+	__extends(stackbox_test_sprite, _super);
+	function stackbox_test_sprite(rect_width, rect_height, grid_width, grid_height, actions) {
+		var surf = new stackbox_graph_surface(grid_width * rect_width, grid_height * rect_height);
+		var rect = new stackbox_type_position(rect_width, rect_height);
+		_super.call(this, surf, rect, actions);
 	}
-	return stackbox_test_frames;
-})();
+	stackbox_test_sprite.prototype._draw_all = function() {
+		var grid = {};
+		for(var k in this.acts) {
+			for(var i = 0; i < acts[k].length; i++) {
+				var frame = acts[k][i];
+				var x = frames.range.top.x;
+				var y = frames.range.top.y;
+				if(stackbox_util.dtab_op(grid, 'get', x, y)) {
+					if(grid[x][y][2] != null)
+						grid[x][y] = [k, i, frame.trans];
+				} else {
+					stackbox_util.dtab_op(grid, 'set', x, y, [k, i, frame.trans]);
+				}
+			}
+		}
+		for(var x in grid) {
+			for(var y in grid[x]) {
+				this._draw_frame(x, y, grid[x][y][0], grid[x][y][1]);
+			}
+		}
+	};
+	stackbox_test_sprite.prototype._draw_frame = function(x, y, name, cnt) {
+		var cx = x + this.rect.x / 2;
+		var cy = y + this.rect.y / 2;
+		stackbox_graph_system.draw_text(this.surface.ctx, t_surf_rng.top, name + cnt, 'verdana', 'center', 'middle', null, null, true);
+	};
+	return stackbox_test_sprite;
+})(stackbox_graph_sprite);
 
 /*************************************************************************************/
 
@@ -1560,6 +1691,42 @@ var stackbox_util = {
 		else
 			return null;
 	},
+	dtab_op: function(dtab, op) {
+		var r = dtab;
+		switch(op) {
+			case 'set':
+				for(var i = 2; i < arguments.length - 2; i++) {
+					if(!(arguments[i] in r)) r[arguments[i]] = {};
+					r = r[arguments[i]];
+				}
+				if(i < arguments.length - 1) {
+					r[arguments[i]] = arguments[i + 1];
+				}
+				return dtab;
+			case 'get':
+				for(var i = 2; i < arguments.length; i++) {
+					if(typeof(r) != 'object' || !(arguments[i] in r)) return undefined;
+					r = r[arguments[i]];
+				}
+				return r;
+			case 'del':
+				var _stck = [];
+				for(var i = 2; i < arguments.length; i++) {
+					if(typeof(r) != 'object' || !(arguments[i] in r)) return false;
+					_stck.push([r, arguments[i]]);
+					r = r[arguments[i]];
+				}
+				r = {};
+				while(Object.keys(r).length == 0 && _stck.length > 0) {
+					var _ti = _stck.pop();
+					r = _ti[0];
+					delete r[_ti[1]];
+				}
+				return true;
+			default:
+				return;
+		}
+	},
 	async_checker: (function() {
 		function async_checker() {
 			this.que = [];
@@ -1596,6 +1763,7 @@ function test1() {
 	var t_surf = new stackbox_graph_surface(t_surf_rng.len(0), t_surf_rng.len(1));
 	//stackbox_graph_system.draw_text(t_surf.ctx, t_surf_rng.top, 'Hello World!');
 	//stackbox_graph_system.draw_rect(t_surf.ctx, t_surf_rng, true);
+	//stackbox_graph_system.draw_text(t_surf.ctx, t_surf_rng.top, 'Hello World!', null, 'center', 'middle', null, null, true);
 	stackbox_graph_system.draw_text(t_surf.ctx, t_surf_rng.top, 'Hello World!', null, null, null, null, null, true);
 	var t_frame = new stackbox_graph_frame(t_surf, t_surf_rng);
 	var box = new stackbox_graph_box(6);
@@ -1679,7 +1847,7 @@ function test3() {
 			_super.call(this);
 		}
 		return inttest;
-	})(stackbox_spec_graph);
+	})(stackbox_spec_actions);
 	var sg = new inttest();
 	sg.act_info = {
 		'idle': [{'duration':1}, {'duration':3, 'loop':true}],
