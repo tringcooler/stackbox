@@ -34,7 +34,7 @@ var stackbox_type_position = (function() {
 	function stackbox_type_position(x, y, z) {
 		this.x = x;
 		this.y = y;
-		if(z == undefined)
+		if(z === undefined)
 			z = null;
 		this.z = z;
 	}
@@ -163,7 +163,7 @@ var stackbox_type_range = (function() {
 		return new stackbox_type_range(_top, _bot);
 	};
 	stackbox_type_range.prototype.len = function(dim) {
-		if(dim != undefined) {
+		if(dim !== undefined) {
 			return this.bot.tuple()[dim] - this.top.tuple()[dim];
 		} else {
 			var _z = null;
@@ -285,12 +285,12 @@ var stackbox_spec_graph = (function() {
 	function stackbox_spec_graph(pos, type, frames) {
 		this.pos = pos;
 		this.type = type;
-		if(frames == undefined)
+		if(frames === undefined)
 			frames = {};
 		this.frames = frames
 	}
 	stackbox_spec_graph.prototype.set_frame = function(name, frame) {
-		if(frame == undefined)
+		if(frame === undefined)
 			delete this.frames[name];
 		else
 			this.frames[name] = frame;
@@ -301,6 +301,7 @@ var stackbox_spec_graph = (function() {
 /***********************************DFAN***********************************************/
 /*Deterministic Finite Automation Network*/
 
+/* perf_importance: most */
 var stackbox_dfan_hook = (function() {
 	var g_fid = 1;
 	var default_results = function(rslt_list) {return rslt_list[0];};
@@ -310,9 +311,11 @@ var stackbox_dfan_hook = (function() {
 	}
 	stackbox_dfan_hook.prototype.invoke_args = function(args) {
 		var rs = [];
-		for(var k in this.func_list) {
+		//for(var k in this.func_list) {
+		for(var ki = 0, kl = Object.keys(this.func_list), k;
+			k = kl[ki], ki < kl.length; ki++) {
 			var r = this.func_list[k].apply(this, args);
-			if(r != undefined)
+			if(r !== undefined)
 				rs.push(r);
 		}
 		if(rs.length > 0)
@@ -326,23 +329,24 @@ var stackbox_dfan_hook = (function() {
 		return g_fid++;
 	};
 	stackbox_dfan_hook.prototype.remove = function(fid) {
-		if(!(fid in this.func_list)) return false;
+		if(/*!in*/this.func_list[fid] === undefined) return false;
 		return (delete this.func_list[fid]);
 	};
 	return stackbox_dfan_hook;
 })();
 
+/* perf_importance: most */
 var stackbox_dfan_hooks = (function() {
 	function stackbox_dfan_hooks() {
 		this.hooks = {};
 	}
 	stackbox_dfan_hooks.prototype.invoke = function(hk) {
-		if(!this.hooks.hasOwnProperty(hk)) return;
+		if(/*!hasOwnProperty*/this.hooks[hk] === undefined) return;
 		var args = Array.prototype.slice.call(arguments, 1);
 		return this.hooks[hk].invoke_args(args);
 	};
 	stackbox_dfan_hooks.prototype.add = function(hk, func) {
-		if(!this.hooks.hasOwnProperty(hk))
+		if(/*!hasOwnProperty*/this.hooks[hk] === undefined)
 			this.hooks[hk] = new stackbox_dfan_hook();
 		var fid = this.hooks[hk].add(func);
 		return hk + ':' + fid;
@@ -351,18 +355,19 @@ var stackbox_dfan_hooks = (function() {
 		var ids = hid.split(':');
 		var hk = ids[0];
 		var fid = ids[1];
-		if(!this.hooks.hasOwnProperty(hk)) return false;
+		if(/*!hasOwnProperty*/this.hooks[hk] === undefined) return false;
 		return this.hooks[hk].remove(fid);
 	};
 	stackbox_dfan_hooks.prototype.results_handle = function(hk, func) {
-		if(!this.hooks.hasOwnProperty(hk)) return;
-		if(func != undefined) 
+		if(/*!hasOwnProperty*/this.hooks[hk] === undefined) return;
+		if(func !== undefined) 
 			this.hooks[hk].results = func;
 		return this.hooks[hk].results;
 	};
 	return stackbox_dfan_hooks;
 })();
 
+/* perf_importance: most */
 var stackbox_dfan_lock_simple = (function() {
 	function stackbox_dfan_lock_simple() {}
 	stackbox_dfan_lock_simple.prototype.lock = function(hk) {
@@ -391,28 +396,30 @@ var stackbox_dfan_property = (function() {
 		return a == b;
 	};
 	function stackbox_dfan_property(val) {
-		if(val == undefined) val = null;
+		if(val === undefined) val = null;
 		this._value = val;
 		this._hooks = new stackbox_dfan_hooks();
 		this._hooks_lock = new stackbox_dfan_lock_simple();
 		this.__eq__ = default_eq;
 	}
+	/* perf_importance: most */
 	stackbox_dfan_property.prototype.get = function() {
 		var val = this._value;
 		if(!this._hooks_lock.check(HK_GET)) {
 			this._hooks_lock.lock(HK_GET);
 			var r = this._hooks.invoke(HK_GET, r, this);
-			if(r != undefined)
+			if(r !== undefined)
 				val = r;
 			this._hooks_lock.unlock(HK_GET);
 		}
 		return val;
 	};
+	/* perf_importance: most */
 	stackbox_dfan_property.prototype.set = function(val) {
 		if(!this._hooks_lock.check(HK_SET)) {
 			this._hooks_lock.lock(HK_SET);
 			var r = this._hooks.invoke(HK_SET, val, this._value, this);
-			if(r != undefined)
+			if(r !== undefined)
 				val = r;
 			this._hooks_lock.unlock(HK_SET);
 		}
@@ -420,7 +427,7 @@ var stackbox_dfan_property = (function() {
 			if(!this.__eq__(this._value, val)) {
 				this._hooks_lock.lock(HK_CHANGE);
 				var r = this._hooks.invoke(HK_CHANGE, val, this._value, this);
-				if(r != undefined)
+				if(r !== undefined)
 					val = r;
 				this._hooks_lock.unlock(HK_CHANGE);
 			}
@@ -428,15 +435,18 @@ var stackbox_dfan_property = (function() {
 		this._value = val;
 		return val;
 	};
+	/* perf_importance: much */
 	stackbox_dfan_property.prototype.hook = function(hk, func) {
 		return this._hooks.add(hk, func);
 	};
+	/* perf_importance: most */
 	stackbox_dfan_property.prototype.results_handle = function(hk, func) {
 		return this._hooks.results_handle(hk, func);
 	};
 	stackbox_dfan_property.prototype.dishook = function(hid) {
 		return this._hooks.remove(hid);
 	};
+	/* perf_importance: much */
 	stackbox_dfan_property.prototype.islocked = function(hk) {
 		return this._hooks_lock.check(hk);
 	};
@@ -454,13 +464,16 @@ var stackbox_dfan_automaton = (function() {
 	var SYM_BYPS = '%';
 	function stackbox_dfan_automaton() {
 		this._props_info = {};
+		this._state = null;
 	}
 	stackbox_dfan_automaton.prototype.handled_trigger = [
 		//HK_GET, HK_SET, HK_CHANGE
 		HK_CHANGE
 	];
+	/* perf_importance: most */
 	stackbox_dfan_automaton.prototype._prop_handler = function(name, trigger) {
-		if(!(trigger in this._props_info[name].triggers)) return;
+		if(/*!in*/this._props_info[name].triggers[this._state] === undefined
+			|| /*!in*/this._props_info[name].triggers[this._state][trigger] === undefined) return;
 		var args = Array.prototype.slice.call(arguments, 2);
 		var info = {
 			'name': name,
@@ -481,8 +494,8 @@ var stackbox_dfan_automaton = (function() {
 				info['args'] = args;
 				break;
 		}
-		if(this._props_info[name].triggers[trigger])
-			return this._props_info[name].triggers[trigger].call(this, info);
+		if(this._props_info[name].triggers[this._state][trigger])
+			return this._props_info[name].triggers[this._state][trigger].call(this, info);
 	};
 	stackbox_dfan_automaton.prototype._clear_triggers = function() {
 		if(this._last_trigs) {
@@ -492,7 +505,8 @@ var stackbox_dfan_automaton = (function() {
 		}
 		this._last_trigs = [];
 	};
-	stackbox_dfan_automaton.prototype._set_triggers = function(trigs, func) {
+	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype._set_triggers = function(sta, trigs, func, prio) {
 		for(var i = 0; i < trigs.length; i++) {
 			var prop_trig = trigs[i];
 			var prop = prop_trig;
@@ -501,19 +515,21 @@ var stackbox_dfan_automaton = (function() {
 				var _splt = prop_trig.slice(1).split(SYM_TRIG_SPLIT);
 				var prop = _splt[0];
 				var trig = _splt[1];
-				if('handled_triggers' in this._props_info[prop])
+				if(/*in*/this._props_info[prop].handled_triggers !== undefined)
 					hndl_trig = this._props_info[prop].handled_triggers;
 				if(hndl_trig.indexOf(trig) < 0) continue;
-				this._props_info[prop].triggers[trig] = func;
+				if(/*!in*/this._props_info[prop].triggers[sta] === undefined)
+					this._props_info[prop].triggers[sta] = {};
+				this._props_info[prop].triggers[sta][trig] = func;
 			} else {
-				if('handled_triggers' in this._props_info[prop])
+				if(/*in*/this._props_info[prop].handled_triggers !== undefined)
 					hndl_trig = this._props_info[prop].handled_triggers;
+				if(/*!in*/this._props_info[prop].triggers[sta] === undefined)
+					this._props_info[prop].triggers[sta] = {};
 				for(var j = 0; j < hndl_trig.length; j++) {
-					this._props_info[prop].triggers[hndl_trig[j]] = func;
+					this._props_info[prop].triggers[sta][hndl_trig[j]] = func;
 				}
 			}
-			if(this._last_trigs.indexOf(prop) < 0)
-				this._last_trigs.push(prop);
 		}
 	};
 	stackbox_dfan_automaton.prototype._get_state_func = function(state) {
@@ -521,35 +537,187 @@ var stackbox_dfan_automaton = (function() {
 	};
 	stackbox_dfan_automaton.prototype._get_state_trig = function(state) {
 		var r = this['statrig_' + state];
-		if(r == undefined) r = Object.keys(this._props_info);//this.prop_list();//[];
+		if(r === undefined) r = Object.keys(this._props_info);//this.prop_list();//[];
 		return r;
 	};
 	var INTMAP_ST_ALL = '__all__';
-	var INTMAP_ST_EX = '__ex__';
+	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype._parse_prio = function(s) {
+		var re_p = /^(\w+)(\$(\$)?(\d*)(\$)?)?$/.exec(s);
+		var prio = 1;
+		if(re_p) {
+			var rs = re_p[1];
+			var term = !!re_p[5];
+			if(re_p[2]) {
+				if(re_p[4]) {
+					prio = parseInt(re_p[4]);
+					if(re_p[3])
+						prio = - prio;
+				} else {
+					if(re_p[3])
+						prio = '-';
+					else
+						prio = '+';
+				}
+			}
+		} else {
+			var rs = s;
+			var term = false;
+		}
+		/*var prio = 0;
+		var p_idx = s.indexOf('$');
+		var rs = s;
+		var term = false;
+		if(p_idx > -1) {
+			rs = s.slice(0, p_idx);
+			var p_s = s.slice(p_idx + 1);
+			var prio_neg = false;
+			if(p_s[0] == '$') {
+				prio_neg = true;
+				p_s = p_s.slice(1);
+			}
+			if(p_s.slice(-1) == '$') {
+				term = true;
+				p_s = p_s.slice(0, -1);
+			}
+			if(p_s) {
+				prio = parseInt(p_s);
+				if(prio_neg)
+					prio = - prio;
+			} else {
+				if(prio_neg)
+					prio = '-';
+				else
+					prio = '+';
+			}
+		}*/
+		return [rs, prio, term];
+	};
+	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype._key_level = function(key) {
+		if(/*!in*/this[key] === undefined) return -1;
+		var r = this;
+		var lvl = 0;
+		while(r != Object.prototype) {
+			if(r.hasOwnProperty(key)) break;
+			lvl ++;
+			r = r.__proto__;
+		}
+	};
+	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype._record_trig = function(rec, trig, func) {
+		rec.tidx = rec.trig.length;
+		rec.trig.push([trg, func]);
+	};
+	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype._record_cond = function(rec, state, lvl, prio, term, tidx) {
+		if(tidx === undefined) tidx = rec.tidx;
+		var t = rec.cond;
+		if(/*!in*/t[state] === undefined) t[state] = {};
+		t = t[state];
+		if(/*!in*/t[lvl] === undefined) t[lvl] = {};
+		t = t[lvl];
+		t[prio] = [tidx, term];
+	};
+	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype._record_cond_ex = function(rec, state, lvl, prio, term) {
+		if(/*!in*/rec.cond_ex[state] === undefined) rec.cond_ex[state] = {};
+		rec.cond_ex[state][rec.tidx] = [lvl, prio, term];
+	};
+	/* perf_importance: much */
+	stackbox_dfan_automaton.prototype._imp_record_ex = function(rec) {
+		if(/*!in*/rec.cond_ex[INTMAP_ST_ALL] === undefined) return;
+		var c_all = rec.cond_ex[INTMAP_ST_ALL];
+		for(var i = 0, il = Object.keys(c_all); i < il.length; i++) {
+			var c_i = il[i];
+			var c_t = c_all[c_i];
+			//for(var st in rec.cond) {
+			for(var sti = 0, stl = Object.keys(rec.cond), st;
+				st = stl[sti], sti < stl.length; sti++) {
+				if(/*!in*/rec.cond_ex[st][c_i] === undefined) {
+					this._record_cond(rec, st, c_t[0], c_t[1], c_t[2], c_i);
+				}
+			}
+		}
+	};
+	/* perf_importance: much */
+	stackbox_dfan_automaton.prototype._impl_record = function(rec) {
+		this._imp_record_ex(rec);
+		//for(var st in rec.cond) {
+		for(var sti = 0, stl = Object.keys(rec.cond), st;
+			st = stl[sti], sti < stl.length; sti++) {
+			var rc_st = rec.cond[st];
+			var lvl_ks = Object.keys(rc_st).sort(function(a, b){return a > b});
+			var r_merg = {};
+			for(var i = 0; i < lvl_ks.length; i++) {
+				var lvl = lvl_ks[i];
+				var term_prio = 0;
+				var rc_lvl = rc_st[lvl];
+				var prio_ks = Object.keys(rc_lvl);
+				for(var j = 0; j < prio_ks.length; j++) {
+					var prio = prio_ks[j];
+					var rc_prio = rc_lvl[prio];
+					var r_info = {
+						'lvl': lvl,
+						'tidx': rc_prio[0],
+					};
+					if(rc_prio[1]) {
+						term_prio = rc_prio[1];
+					}
+					if(/*!in*/r_merg[prio] === undefined) {
+						r_merg[prio] = r_info;
+					}
+				}
+			}
+		}
+	};
+	/* perf_importance: much */
 	stackbox_dfan_automaton.prototype._init_interrupts = function() {
-		var _r_st = {};
-		var _r_int = {};
-		for(var key in this) {
-			if(key.slice(0, 10) == 'interrupt_') {
+		var _rec = {
+			'trig': [],
+			'tidx': 0,
+			'cond': {},
+			'cond_ex': {},
+		};
+		//for(var key in this) {
+		for(var keyi = 0, keyl = Object.keys(this), key;
+			key = keyl[keyi], keyi < keyl.length; keyi++) {
+			if(key.slice(0, 6) == 'state_') {
+				var sta_lvl = this._key_level(key);
+				var sta_name = key.slice(6);
+				var sta_func = this[key];
+				var sta_trig = this['statrig_' + sta_name];
+				var _prio = this._parse_prio(sta_name);
+				var sta_state = _prio[0];
+				var sta_prio = _prio[1];
+				var sta_term = _prio[2];
+				this._record_trig(_rec, sta_trig, sta_func);
+				this._record_cond(_rec, sta_state, sta_lvl, sta_prio, sta_term);
+			} else if(key.slice(0, 10) == 'interrupt_') {
+				var int_lvl = this._key_level(key);
 				var int_cmds = key.slice(10).split('_');
 				var int_name = int_cmds[0];
+				var int_func = this[key];
+				var int_trig = this['inttrig_' + int_name];
+				var _prio = this._parse_prio(int_name);
+				var int_prio = _prio[1];
+				var int_term = _prio[2];
 				var sta_no_set = true;
+				var sta_ex_name = [];
+				this._record_trig(_rec, int_trig, int_func);
 				for(var i = 1; i < int_cmds.length; i++) {
 					var cmd = int_cmds[i].split('$');
 					switch(cmd[0]) {
 						case 'st':
 							for(var j = 1; j < cmd.length; j++) {
-								var sta_name = cmd[j];
-								if(!(sta_name in _r_st)) _r_st[sta_name] = [];
-								_r_st[sta_name].push(int_name);
+								this._record_cond(_rec, cmd[j], int_lvl, int_prio, int_term);
 							}
 							sta_no_set = false;
 							break;
 						case 'ex':
 							for(var j = 1; j < cmd.length; j++) {
-								var ex_sta_name = INTMAP_ST_EX + cmd[j];
-								if(!(ex_sta_name in _r_st)) _r_st[ex_sta_name] = [];
-								_r_st[ex_sta_name].push(int_name);
+								sta_ex_name.push(cmd[j]);
+								this._record_cond_ex(_rec, cmd[j], int_lvl, int_prio, int_term);
 							}
 							break;
 						default:
@@ -557,19 +725,10 @@ var stackbox_dfan_automaton = (function() {
 					}
 				}
 				if(sta_no_set) {
-					if(!(INTMAP_ST_ALL in _r_st)) _r_st[INTMAP_ST_ALL] = [];
-					_r_st[INTMAP_ST_ALL].push(int_name);
+					this._record_cond(_rec, INTMAP_ST_ALL, int_lvl, int_prio, int_term);
 				}
-				_r_int[int_name] = {
-					'func': this[key],
-					'trig': this['inttrig_' + int_name],
-				};
 			}
 		}
-		return {
-			'interrupts': _r_int,
-			'states': _r_st,
-		};
 	};
 	stackbox_dfan_automaton.prototype._set_interrupts = function(state) {
 		if(!this._int_sta_map) {
@@ -579,7 +738,7 @@ var stackbox_dfan_automaton = (function() {
 			var _st_q = this._int_sta_map.states[state];
 			for(var i = 0; i < _st_q.length; i++) {
 				var _int = this._int_sta_map.interrupts[_st_q[i]];
-				this._set_triggers(_int.trig, _int.func);
+				this._set_triggers(state, _int.trig, _int.func);
 			}
 		}
 		if(INTMAP_ST_ALL in this._int_sta_map.states) {
@@ -592,40 +751,48 @@ var stackbox_dfan_automaton = (function() {
 						continue;
 				}
 				var _int = this._int_sta_map.interrupts[_int_name];
-				this._set_triggers(_int.trig, _int.func);
+				this._set_triggers(state, _int.trig, _int.func);
 			}
 		}
 	};
+	/* perf_importance: most */
 	stackbox_dfan_automaton.prototype.goto_state = function(state) {
 		this._clear_triggers();
-		this._set_triggers(this._get_state_trig(state), this._get_state_func(state));
+		this._set_triggers(state, this._get_state_trig(state), this._get_state_func(state));
 		this._set_interrupts(state);
 		console.log('goto', state);
 	};
+	/* perf_importance: most */
 	stackbox_dfan_automaton.prototype.jump_state = function(state, info) {
 		console.log('jump', state);
-		if(info == undefined) info = {};
+		if(info === undefined) info = {};
 		this._get_state_func(state).call(this, info);
 	};
+	/* perf_importance: more */
 	stackbox_dfan_automaton.prototype.prop_islocked = function(name, trig) {
 		return this._props_info[name].prop.islocked(trig);
 	};
+	/* perf_importance: more */
 	stackbox_dfan_automaton.prototype.prop_get = function(name) {
 		if(name[0] == SYM_BYPS) return this._props_info[name].prop;
 		return this._props_info[name].prop.get();
 	};
+	/* perf_importance: more */
 	stackbox_dfan_automaton.prototype.prop_set = function(name, val) {
 		if(name[0] == SYM_IMPT) return; //Read only property (import from extra)
 		if(name[0] == SYM_BYPS) return (this._props_info[name].prop = val);
 		return this._props_info[name].prop.set(val);
 	};
+	/* perf_importance: more */
 	stackbox_dfan_automaton.prototype.prop_input = function(name, val) {
 		if(name[0] != SYM_IMPT) return;
 		return this._props_info[name].prop.set(val);
 	};
 	stackbox_dfan_automaton.prototype.prop_list = function(own) {
 		var r = [];
-		for(var k in this._props_info) {
+		//for(var k in this._props_info) {
+		for(var ki = 0, kl = Object.keys(this._props_info), k;
+			k = kl[ki], ki < kl.length; ki++) {
 			if(own) {
 				if(k[0] != SYM_IMPT) r.push(k);
 			} else {
@@ -634,14 +801,16 @@ var stackbox_dfan_automaton = (function() {
 		}
 		return r;
 	};
+	/* perf_importance: much */
 	stackbox_dfan_automaton.prototype.prop_check = function(need_list) {
 		for(var i = 0; i < need_list.length; i++) {
-			if(!(need_list[i] in this._props_info)) return false;
+			if(/*!in*/this._props_info[need_list[i]] === undefined) return false;
 		}
 		return true;
 	};
+	/* perf_importance: much */
 	stackbox_dfan_automaton.prototype.bind_prop = function(name, prop, hndl_trig) {
-		if(name in this._props_info) this.remove_prop(name);
+		if(/*in*/this._props_info[name] !== undefined) this.remove_prop(name);
 		var prop_info = {
 			'prop': prop,
 			'hids': {},
@@ -662,11 +831,11 @@ var stackbox_dfan_automaton = (function() {
 		this._props_info[name] = prop_info;
 	};
 	stackbox_dfan_automaton.prototype.remove_prop = function(name) {
-		if(!(name in this._props_info)) return false;
+		if(/*!in*/this._props_info[name] === undefined)) return false;
 		if(name[0] != SYM_BYPS) {
 			var prop_info = this._props_info[name];
 			var hndl_trig = this.handled_trigger;
-			if('handled_triggers' in prop_info) hndl_trig = prop_info.handled_triggers;
+			if(/*in*/prop_info.handled_triggers !== undefined) hndl_trig = prop_info.handled_triggers;
 			for(var i = 0; i < hndl_trig.length; i++) {
 				var hk = hndl_trig[i];
 				prop_info.prop.dishook(prop_info.hids[hk]);
@@ -674,6 +843,7 @@ var stackbox_dfan_automaton = (function() {
 		}
 		return (delete this._props_info[name]);
 	};
+	/* perf_importance: more */
 	stackbox_dfan_automaton.prototype.export_prop = function(name) {
 		if(name[0] != SYM_EXPT) return;
 		return this._props_info[name].prop;
@@ -897,7 +1067,7 @@ var stackbox_spec_prop_hotkey = (function(_super) {
 		if(!this._hooks_lock.check(HK_SET)) {
 			this._hooks_lock.lock(HK_SET);
 			var r = this._hooks.invoke(HK_SET, val, this._value, this);
-			if(r != undefined)
+			if(r !== undefined)
 				val = r;
 			this._hooks_lock.unlock(HK_SET);
 		}
@@ -905,7 +1075,7 @@ var stackbox_spec_prop_hotkey = (function(_super) {
 			if(!this._hooks_lock.check(HK_CHANGE)) {
 				this._hooks_lock.lock(HK_CHANGE);
 				var r = this._hooks.invoke(HK_CHANGE, val, this._value, this);
-				if(r != undefined)
+				if(r !== undefined)
 					val = r;
 				this._hooks_lock.unlock(HK_CHANGE);
 			}
@@ -1952,6 +2122,38 @@ function test4() {
 	pl.bind_prop('@ka', kb.add_key(65), ['key_down', 'key_up']);
 	pl.bind_prop('@kb', kb.add_key(66), ['key_down', 'key_up']);
 	pl.goto_state('idle');
+}
+
+function test5() {
+	var foo1 = (function() {
+		function foo1() {
+		}
+		foo1.prototype.a = 123;
+		foo1.prototype.b = 123;
+		foo1.prototype.c = 123;
+		return foo1;
+	})();
+	var foo2 = (function(_super) {
+		__extends(foo2, _super);
+		function foo2() {
+			_super.call(this);
+		}
+		foo2.prototype.b = 456;
+		foo2.prototype.c = 456;
+		foo2.prototype.d = 456;
+		return foo2;
+	})(foo1);
+	var foo3 = (function(_super) {
+		__extends(foo3, _super);
+		function foo3() {
+			_super.call(this);
+		}
+		foo3.prototype.c = 789;
+		foo3.prototype.d = 789;
+		foo3.prototype.e = 789;
+		return foo3;
+	})(foo2);
+	return new foo3();
 }
 
 $(document).ready(function() {
