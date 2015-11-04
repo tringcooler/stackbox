@@ -494,19 +494,17 @@ var stackbox_dfan_automaton = (function() {
 				info['args'] = args;
 				break;
 		}
-		if(this._props_info[name].triggers[this._state][trigger])
-			return this._props_info[name].triggers[this._state][trigger].call(this, info);
-	};
-	stackbox_dfan_automaton.prototype._clear_triggers = function() {
-		if(this._last_trigs) {
-			for(var i = 0; i < this._last_trigs.length; i++) {
-				this._props_info[this._last_trigs[i]].triggers = {};
+		var _ts = this._props_info[name].triggers[this._state][trigger];
+		if(_ts) {
+			var r = null;
+			for(var i = 0; i < _ts.length; i++) {
+				r = _ts[i].call(this, info);
 			}
+			return r;
 		}
-		this._last_trigs = [];
 	};
 	/* perf_importance: much n */
-	stackbox_dfan_automaton.prototype._set_triggers = function(sta, trigs, func, prio) {
+	stackbox_dfan_automaton.prototype._set_triggers = function(sta, trigs, func) {
 		for(var i = 0; i < trigs.length; i++) {
 			var prop_trig = trigs[i];
 			var prop = prop_trig;
@@ -515,83 +513,61 @@ var stackbox_dfan_automaton = (function() {
 				var _splt = prop_trig.slice(1).split(SYM_TRIG_SPLIT);
 				var prop = _splt[0];
 				var trig = _splt[1];
-				if(/*in*/this._props_info[prop].handled_triggers !== undefined)
-					hndl_trig = this._props_info[prop].handled_triggers;
+				var _info = this._props_info[prop];
+				if(/*in*/_info.handled_triggers !== undefined)
+					hndl_trig = _info.handled_triggers;
 				if(hndl_trig.indexOf(trig) < 0) continue;
-				if(/*!in*/this._props_info[prop].triggers[sta] === undefined)
-					this._props_info[prop].triggers[sta] = {};
-				this._props_info[prop].triggers[sta][trig] = func;
+				if(/*!in*/_info.triggers[sta] === undefined)
+					_info.triggers[sta] = {};
+				if(/*!in*/_info.triggers[sta][trig] === undefined)
+					_info.triggers[sta][trig] = [];
+				_info.triggers[sta][trig].push(func);
 			} else {
-				if(/*in*/this._props_info[prop].handled_triggers !== undefined)
-					hndl_trig = this._props_info[prop].handled_triggers;
-				if(/*!in*/this._props_info[prop].triggers[sta] === undefined)
-					this._props_info[prop].triggers[sta] = {};
+				var _info = this._props_info[prop];
+				if(/*in*/_info.handled_triggers !== undefined)
+					hndl_trig = _info.handled_triggers;
+				if(/*!in*/_info.triggers[sta] === undefined)
+					_info.triggers[sta] = {};
 				for(var j = 0; j < hndl_trig.length; j++) {
-					this._props_info[prop].triggers[sta][hndl_trig[j]] = func;
+					var _tg = hndl_trig[j];
+					if(/*!in*/_info.triggers[sta][_tg] === undefined)
+						_info.triggers[sta][_tg] = [];
+					_info.triggers[sta][_tg].push(func);
 				}
 			}
 		}
 	};
-	stackbox_dfan_automaton.prototype._get_state_func = function(state) {
-		return this['state_' + state];
-	};
-	stackbox_dfan_automaton.prototype._get_state_trig = function(state) {
-		var r = this['statrig_' + state];
-		if(r === undefined) r = Object.keys(this._props_info);//this.prop_list();//[];
-		return r;
-	};
-	var INTMAP_ST_ALL = '__all__';
 	/* perf_importance: much n */
 	stackbox_dfan_automaton.prototype._parse_prio = function(s) {
-		var re_p = /^(\w+)(\$(\$)?(\d*)(\$)?)?$/.exec(s);
+		//var re_p = /^(\w+)(\$(\$)?(\d*)(\$)?)?$/.exec(s);
+		//var re_p = /^(\w+)(?=.*?(?:\$(i)?(n)?(\d+)?)?)(?=.*?(?:\$t(t)?)?)$/.exec(s);
+		//var re_p = /^(\w+)(\$(m)?(n)?([1-9]\d*)?(\$(h)?)?)?$/.exec(s);
+		var re_p = /^\w+(?=(?:.*?(\$([a|m])(n)?([1-9]\d*)?))?)(?=(?:.*?(\$t(h)?))?)(?=(?:.*?(\$v(\w+)))?)(?=(?:.*?(\$f))?)/.exec(s);
 		var prio = 1;
+		var modify = true;
+		var term = 0;
+		var comm = null;
+		var flood = false;
 		if(re_p) {
-			var rs = re_p[1];
-			var term = !!re_p[5];
-			if(re_p[2]) {
-				if(re_p[4]) {
-					prio = parseInt(re_p[4]);
-					if(re_p[3])
-						prio = - prio;
-				} else {
-					if(re_p[3])
-						prio = '-';
-					else
-						prio = '+';
-				}
-			}
-		} else {
-			var rs = s;
-			var term = false;
-		}
-		/*var prio = 0;
-		var p_idx = s.indexOf('$');
-		var rs = s;
-		var term = false;
-		if(p_idx > -1) {
-			rs = s.slice(0, p_idx);
-			var p_s = s.slice(p_idx + 1);
-			var prio_neg = false;
-			if(p_s[0] == '$') {
-				prio_neg = true;
-				p_s = p_s.slice(1);
-			}
-			if(p_s.slice(-1) == '$') {
-				term = true;
-				p_s = p_s.slice(0, -1);
-			}
-			if(p_s) {
-				prio = parseInt(p_s);
-				if(prio_neg)
+			var rs = re_p[0];
+			if(re_p[1]) {
+				if(re_p[2] == 'a')
+					modify = false;
+				if(re_p[4])
+					prio = parseInt(re_p[5]);
+				if(re_p[3])
 					prio = - prio;
-			} else {
-				if(prio_neg)
-					prio = '-';
-				else
-					prio = '+';
 			}
-		}*/
-		return [rs, prio, term];
+			if(re_p[5])
+				term = re_p[6]?-1:1;
+			if(re_p[7])
+				comm = re_p[8];
+			if(re_p[9])
+				flood = true;
+		} else {
+			throw 'unknown statename ext.';
+		}
+		return [rs, prio, modify, term, flood, comm];
 	};
 	/* perf_importance: much n */
 	stackbox_dfan_automaton.prototype._key_level = function(key) {
@@ -603,39 +579,47 @@ var stackbox_dfan_automaton = (function() {
 			lvl ++;
 			r = r.__proto__;
 		}
+		return lvl;
 	};
 	/* perf_importance: much n */
 	stackbox_dfan_automaton.prototype._record_trig = function(rec, trig, func) {
 		rec.tidx = rec.trig.length;
-		rec.trig.push([trg, func]);
+		rec.trig.push([trig, func]);
 	};
 	/* perf_importance: much n */
-	stackbox_dfan_automaton.prototype._record_cond = function(rec, state, lvl, prio, term, tidx) {
+	stackbox_dfan_automaton.prototype._record_cond = function(rec, state, lvl, prio, modi, term, floo, tidx) {
 		if(tidx === undefined) tidx = rec.tidx;
 		var t = rec.cond;
 		if(/*!in*/t[state] === undefined) t[state] = {};
 		t = t[state];
 		if(/*!in*/t[lvl] === undefined) t[lvl] = {};
 		t = t[lvl];
-		t[prio] = [tidx, term];
+		if(/*!in*/t[modi] === undefined) t[modi] = {};
+		t = t[modi];
+		if(t[prio]) throw 'overwrite state: ' + state + '.';
+		t[prio] = [tidx, term, floo];
 	};
 	/* perf_importance: much n */
-	stackbox_dfan_automaton.prototype._record_cond_ex = function(rec, state, lvl, prio, term) {
+	stackbox_dfan_automaton.prototype._record_cond_ex = function(rec, state) {
 		if(/*!in*/rec.cond_ex[state] === undefined) rec.cond_ex[state] = {};
-		rec.cond_ex[state][rec.tidx] = [lvl, prio, term];
+		rec.cond_ex[state][rec.tidx] = true;
+	};
+	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype._record_cond_all = function(rec, lvl, prio, modi, term, floo) {
+		rec.cond_all.push([rec.tidx, lvl, prio, modi, term, floo]);
 	};
 	/* perf_importance: much */
 	stackbox_dfan_automaton.prototype._imp_record_ex = function(rec) {
-		if(/*!in*/rec.cond_ex[INTMAP_ST_ALL] === undefined) return;
-		var c_all = rec.cond_ex[INTMAP_ST_ALL];
-		for(var i = 0, il = Object.keys(c_all); i < il.length; i++) {
-			var c_i = il[i];
-			var c_t = c_all[c_i];
+		if(!rec.cond_all.length) return;
+		for(var i = 0; i < rec.cond_all.length; i++) {
+			var c_t = rec.cond_all[i];
+			var c_i = c_t[0];
 			//for(var st in rec.cond) {
 			for(var sti = 0, stl = Object.keys(rec.cond), st;
 				st = stl[sti], sti < stl.length; sti++) {
-				if(/*!in*/rec.cond_ex[st][c_i] === undefined) {
-					this._record_cond(rec, st, c_t[0], c_t[1], c_t[2], c_i);
+				if(/*!in*/rec.cond_ex[st] !== undefined 
+					&& rec.cond_ex[st][c_i] === undefined) {
+					this._record_cond(rec, st, c_t[1], c_t[2], c_t[3], c_t[4], c_t[5], c_i);
 				}
 			}
 		}
@@ -647,61 +631,98 @@ var stackbox_dfan_automaton = (function() {
 		for(var sti = 0, stl = Object.keys(rec.cond), st;
 			st = stl[sti], sti < stl.length; sti++) {
 			var rc_st = rec.cond[st];
-			var lvl_ks = Object.keys(rc_st).sort(function(a, b){return a > b});
-			var r_merg = {};
+			var lvl_ks = Object.keys(rc_st).sort(function(a, b){return b - a});
+			var r_stack = [];
 			for(var i = 0; i < lvl_ks.length; i++) {
-				var lvl = lvl_ks[i];
-				var term_prio = 0;
+				var lvl = parseInt(lvl_ks[i]);
 				var rc_lvl = rc_st[lvl];
-				var prio_ks = Object.keys(rc_lvl);
-				for(var j = 0; j < prio_ks.length; j++) {
-					var prio = prio_ks[j];
-					var rc_prio = rc_lvl[prio];
-					var r_info = {
-						'lvl': lvl,
-						'tidx': rc_prio[0],
-					};
-					if(rc_prio[1]) {
-						term_prio = rc_prio[1];
-					}
-					if(/*!in*/r_merg[prio] === undefined) {
-						r_merg[prio] = r_info;
+				var modi_ks = Object.keys(rc_lvl).sort(function(a, b){return b - a});
+				for(var j = 0; j < modi_ks.length; j++) {
+					var modi = modi_ks[j];
+					var rc_modi = rc_lvl[modi];
+					var prio_ks = Object.keys(rc_modi).sort(function(a, b){return a - b});
+					for(var k = 0; k < prio_ks.length; k++) {
+						//if(k && prio_ks[k] == prio_ks[k-1]) throw 'overwrite state.';
+						var prio = parseInt(prio_ks[k]);
+						var rc_prio = rc_modi[prio];
+						var term = rc_prio[1];
+						var floo = rc_prio[2];
+						var tidx = rc_prio[0];
+						var stack_idx;
+						if(r_stack.length == 0) {
+							if(prio != 1) throw 'invalid prio.';
+							modi = false;
+						}
+						if(modi) {
+							if(prio > 0)
+								stack_idx = r_stack.length - prio;
+							else
+								stack_idx = - 1 - prio;
+							if(stack_idx < 0 || stack_idx >= r_stack.length)
+								throw 'invalid prio.';
+							r_stack[stack_idx] = tidx;
+						} else {
+							if(prio > 0) {
+								r_stack.push(tidx);
+								stack_idx = r_stack.length - 1;
+							} else {
+								r_stack.unshift(tidx);
+								stack_idx = 0;
+							}
+						}
+						if(term > 0) {
+							r_stack.splice(stack_idx + 1, 0, '>');
+						} else if(term < 0) {
+							r_stack.splice(stack_idx, 0, '<');
+						}
 					}
 				}
+				var _tailpos = r_stack.indexOf('>');
+				_tailpos = _tailpos < 0 ? undefined : _tailpos;
+				r_stack = r_stack.slice(r_stack.lastIndexOf('<') + 1, _tailpos);
+			}
+			for(var i = 0; i < r_stack.length; i++) {
+				var c_t = rec.trig[r_stack[i]];
+				this._set_triggers(st, c_t[0], c_t[1]);
 			}
 		}
 	};
 	/* perf_importance: much */
-	stackbox_dfan_automaton.prototype._init_interrupts = function() {
+	stackbox_dfan_automaton.prototype._init_triggers = function() {
 		var _rec = {
 			'trig': [],
 			'tidx': 0,
 			'cond': {},
 			'cond_ex': {},
+			'cond_all': [],
 		};
-		//for(var key in this) {
-		for(var keyi = 0, keyl = Object.keys(this), key;
-			key = keyl[keyi], keyi < keyl.length; keyi++) {
+		for(var key in this) {
+		//for(var keyi = 0, keyl = Object.keys(this), key;
+		//	key = keyl[keyi], keyi < keyl.length; keyi++) {
 			if(key.slice(0, 6) == 'state_') {
-				var sta_lvl = this._key_level(key);
+				var sta_lvl = this._key_level(key) * 2;
 				var sta_name = key.slice(6);
 				var sta_func = this[key];
 				var sta_trig = this['statrig_' + sta_name];
 				var _prio = this._parse_prio(sta_name);
 				var sta_state = _prio[0];
 				var sta_prio = _prio[1];
-				var sta_term = _prio[2];
+				var sta_modi = _prio[2];
+				var sta_term = _prio[3];
+				var sta_floo = _prio[4];
 				this._record_trig(_rec, sta_trig, sta_func);
-				this._record_cond(_rec, sta_state, sta_lvl, sta_prio, sta_term);
+				this._record_cond(_rec, sta_state, sta_lvl, sta_prio, sta_modi, sta_term, sta_floo);
 			} else if(key.slice(0, 10) == 'interrupt_') {
-				var int_lvl = this._key_level(key);
+				var int_lvl = this._key_level(key) * 2 + 1;
 				var int_cmds = key.slice(10).split('_');
 				var int_name = int_cmds[0];
 				var int_func = this[key];
 				var int_trig = this['inttrig_' + int_name];
 				var _prio = this._parse_prio(int_name);
 				var int_prio = _prio[1];
-				var int_term = _prio[2];
+				var int_modi = _prio[2];
+				var int_term = _prio[3];
+				var int_floo = _prio[4];
 				var sta_no_set = true;
 				var sta_ex_name = [];
 				this._record_trig(_rec, int_trig, int_func);
@@ -710,14 +731,14 @@ var stackbox_dfan_automaton = (function() {
 					switch(cmd[0]) {
 						case 'st':
 							for(var j = 1; j < cmd.length; j++) {
-								this._record_cond(_rec, cmd[j], int_lvl, int_prio, int_term);
+								this._record_cond(_rec, cmd[j], int_lvl, int_prio, int_modi, int_term, int_floo);
 							}
 							sta_no_set = false;
 							break;
 						case 'ex':
 							for(var j = 1; j < cmd.length; j++) {
 								sta_ex_name.push(cmd[j]);
-								this._record_cond_ex(_rec, cmd[j], int_lvl, int_prio, int_term);
+								this._record_cond_ex(_rec, cmd[j]);
 							}
 							break;
 						default:
@@ -725,48 +746,22 @@ var stackbox_dfan_automaton = (function() {
 					}
 				}
 				if(sta_no_set) {
-					this._record_cond(_rec, INTMAP_ST_ALL, int_lvl, int_prio, int_term);
+					this._record_cond_all(_rec, int_lvl, int_prio, int_modi, int_term, int_floo);
 				}
 			}
 		}
-	};
-	stackbox_dfan_automaton.prototype._set_interrupts = function(state) {
-		if(!this._int_sta_map) {
-			this._int_sta_map = this._init_interrupts();
-		}
-		if(state in this._int_sta_map.states) {
-			var _st_q = this._int_sta_map.states[state];
-			for(var i = 0; i < _st_q.length; i++) {
-				var _int = this._int_sta_map.interrupts[_st_q[i]];
-				this._set_triggers(state, _int.trig, _int.func);
-			}
-		}
-		if(INTMAP_ST_ALL in this._int_sta_map.states) {
-			var _st_q = this._int_sta_map.states[INTMAP_ST_ALL];
-			for(var i = 0; i < _st_q.length; i++) {
-				var _int_name = _st_q[i];
-				var _ex_sta = INTMAP_ST_EX + state;
-				if(_ex_sta in this._int_sta_map.states) {
-					if(this._int_sta_map.states[_ex_sta].indexOf(_int_name) > -1)
-						continue;
-				}
-				var _int = this._int_sta_map.interrupts[_int_name];
-				this._set_triggers(state, _int.trig, _int.func);
-			}
-		}
+		this._impl_record(_rec);
 	};
 	/* perf_importance: most */
 	stackbox_dfan_automaton.prototype.goto_state = function(state) {
-		this._clear_triggers();
-		this._set_triggers(state, this._get_state_trig(state), this._get_state_func(state));
-		this._set_interrupts(state);
+		if(this._state === null)
+			this._init_triggers();
+		this._state = state;
 		console.log('goto', state);
 	};
 	/* perf_importance: most */
-	stackbox_dfan_automaton.prototype.jump_state = function(state, info) {
-		console.log('jump', state);
-		if(info === undefined) info = {};
-		this._get_state_func(state).call(this, info);
+	stackbox_dfan_automaton.prototype.from_state = function(state) {
+		return this._state == state;
 	};
 	/* perf_importance: more */
 	stackbox_dfan_automaton.prototype.prop_islocked = function(name, trig) {
@@ -831,7 +826,7 @@ var stackbox_dfan_automaton = (function() {
 		this._props_info[name] = prop_info;
 	};
 	stackbox_dfan_automaton.prototype.remove_prop = function(name) {
-		if(/*!in*/this._props_info[name] === undefined)) return false;
+		if(/*!in*/this._props_info[name] === undefined) return false;
 		if(name[0] != SYM_BYPS) {
 			var prop_info = this._props_info[name];
 			var hndl_trig = this.handled_trigger;
