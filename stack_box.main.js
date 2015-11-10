@@ -505,6 +505,7 @@ var stackbox_dfan_automaton = (function() {
 	};
 	/* perf_importance: much n */
 	stackbox_dfan_automaton.prototype._set_triggers = function(sta, trigs, func) {
+		console.log('set_triggers', sta, trigs, func);
 		for(var i = 0; i < trigs.length; i++) {
 			var prop_trig = trigs[i];
 			var prop = prop_trig;
@@ -536,6 +537,55 @@ var stackbox_dfan_automaton = (function() {
 				}
 			}
 		}
+	};
+	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype._flood_trig = function(rec, src, ext) {
+		var _trigs_flags = {};
+		var _set_flags = (function(tidx) {
+			var _trigs = rec.trig[tidx][0];
+			for(var i = 0; i < _trigs.length; i++) {
+				var prop_trig = _trigs[i];
+				if(prop_trig[0] == SYM_TRIG) {
+					_trigs_flags[prop_trig] = tidx;
+				} else {
+					var _info = this._props_info[prop_trig];
+					var hndl_trig = this.handled_trigger;
+					if(/*in*/_info.handled_triggers !== undefined)
+						hndl_trig = _info.handled_triggers;
+					for(var j = 0; j < hndl_trig.length; j++) {
+						var _pt = SYM_TRIG + prop_trig + SYM_TRIG_SPLIT + hndl_trig[j];
+						_trigs_flags[_pt] = tidx;
+					}
+				}
+			}
+		}).bind(this);
+		var _get_results = (function() {
+			var _rvrs = {};
+			//for(var tg in _trigs_flags) {
+			for(var tgi = 0, tgl = Object.keys(_trigs_flags), tg;
+				tg = tgl[tgi], tgi < tgl.length; tgi++) {
+				var _tidx = _trigs_flags[tg];
+				if(/*!in*/_rvrs[_tidx] === undefined)
+					_rvrs[_tidx] = [];
+				_rvrs[_tidx].push(tg);
+			}
+			var _rslt = [];
+			//for(var _tidx in _rvrs) {
+			for(var ii = 0, il = Object.keys(_rvrs), _tidx;
+				_tidx = il[ii], ii < il.length; ii++) {
+				//console.log(_rvrs[_tidx],  rec.trig[_tidx][1]);
+				this._record_trig(rec, _rvrs[_tidx],  rec.trig[_tidx][1]);
+				_rslt.push(rec.tidx);
+			}
+			return _rslt;
+		}).bind(this);
+		_set_flags(src);
+		_set_flags(ext[0]);
+		for(var i = 3; i < ext.length; i++) {
+			_set_flags(ext[i]);
+		}
+		//console.log(_trigs_flags);
+		return _get_results();
 	};
 	/* perf_importance: much n */
 	stackbox_dfan_automaton.prototype._parse_prio = function(s) {
@@ -596,8 +646,16 @@ var stackbox_dfan_automaton = (function() {
 		t = t[lvl];
 		if(/*!in*/t[modi] === undefined) t[modi] = {};
 		t = t[modi];
-		if(t[prio]) throw 'overwrite state: ' + state + '.';
-		t[prio] = [tidx, term, floo];
+		if(t[prio]) {
+			if(floo) {
+				if(!t[prio][2]) throw 'flood mixed.';
+				t[prio].push(tidx);
+			} else {
+				throw 'overwrite state: ' + state + '.';
+			}
+		} else {
+			t[prio] = [tidx, term, floo];
+		}
 	};
 	/* perf_importance: much n */
 	stackbox_dfan_automaton.prototype._record_cond_ex = function(rec, state) {
@@ -660,7 +718,11 @@ var stackbox_dfan_automaton = (function() {
 								stack_idx = - 1 - prio;
 							if(stack_idx < 0 || stack_idx >= r_stack.length)
 								throw 'invalid prio.';
-							r_stack[stack_idx] = tidx;
+							if(floo) {
+								r_stack[stack_idx] = this._flood_trig(rec, r_stack[stack_idx], rc_prio);
+							} else {
+								r_stack[stack_idx] = tidx;
+							}
 						} else {
 							if(prio > 0) {
 								r_stack.push(tidx);
@@ -682,8 +744,16 @@ var stackbox_dfan_automaton = (function() {
 				r_stack = r_stack.slice(r_stack.lastIndexOf('<') + 1, _tailpos);
 			}
 			for(var i = 0; i < r_stack.length; i++) {
-				var c_t = rec.trig[r_stack[i]];
-				this._set_triggers(st, c_t[0], c_t[1]);
+				var _rsi = r_stack[i]
+				if(_rsi instanceof Array) {
+					for(var j = 0; j < _rsi.length; j++) {
+						var c_t = rec.trig[_rsi[j]];
+						this._set_triggers(st, c_t[0], c_t[1]);
+					}
+				} else {
+					var c_t = rec.trig[_rsi];
+					this._set_triggers(st, c_t[0], c_t[1]);
+				}
 			}
 		}
 	};
@@ -700,7 +770,7 @@ var stackbox_dfan_automaton = (function() {
 		//for(var keyi = 0, keyl = Object.keys(this), key;
 		//	key = keyl[keyi], keyi < keyl.length; keyi++) {
 			if(key.slice(0, 6) == 'state_') {
-				var sta_lvl = this._key_level(key) * 2;
+				var sta_lvl = this._key_level(key) * 2 + 1;
 				var sta_name = key.slice(6);
 				var sta_func = this[key];
 				var sta_trig = this['statrig_' + sta_name];
@@ -713,7 +783,7 @@ var stackbox_dfan_automaton = (function() {
 				this._record_trig(_rec, sta_trig, sta_func);
 				this._record_cond(_rec, sta_state, sta_lvl, sta_prio, sta_modi, sta_term, sta_floo);
 			} else if(key.slice(0, 10) == 'interrupt_') {
-				var int_lvl = this._key_level(key) * 2 + 1;
+				var int_lvl = this._key_level(key) * 2;
 				var int_cmds = key.slice(10).split('_');
 				var int_name = int_cmds[0];
 				var int_func = this[key];
@@ -722,7 +792,7 @@ var stackbox_dfan_automaton = (function() {
 				var int_prio = _prio[1];
 				var int_modi = _prio[2];
 				var int_term = _prio[3];
-				var int_floo = _prio[4];
+				var int_floo = true; //_prio[4];
 				var sta_no_set = true;
 				var sta_ex_name = [];
 				this._record_trig(_rec, int_trig, int_func);
