@@ -633,6 +633,8 @@ var stackbox_dfan_automaton = (function() {
 	};
 	/* perf_importance: much n */
 	stackbox_dfan_automaton.prototype._record_trig = function(rec, trig, func) {
+		if(trig === undefined)
+			trig = Object.keys(this._props_info);
 		rec.tidx = rec.trig.length;
 		rec.trig.push([trig, func]);
 	};
@@ -675,8 +677,8 @@ var stackbox_dfan_automaton = (function() {
 			//for(var st in rec.cond) {
 			for(var sti = 0, stl = Object.keys(rec.cond), st;
 				st = stl[sti], sti < stl.length; sti++) {
-				if(/*!in*/rec.cond_ex[st] !== undefined 
-					&& rec.cond_ex[st][c_i] === undefined) {
+				if(/*!in*/rec.cond_ex[st] === undefined 
+					|| rec.cond_ex[st][c_i] === undefined) {
 					this._record_cond(rec, st, c_t[1], c_t[2], c_t[3], c_t[4], c_t[5], c_i);
 				}
 			}
