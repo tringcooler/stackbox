@@ -2191,7 +2191,7 @@ function test4() {
 	pl.goto_state('idle');
 }
 
-function test5() {
+function test_inherit_lvl_spec() {
 	var foo1 = (function() {
 		function foo1() {
 		}
