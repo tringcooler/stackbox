@@ -704,7 +704,7 @@ var stackbox_dfan_automaton = (function() {
 				var rc_lvl = rc_st[lvl];
 				var modi_ks = Object.keys(rc_lvl).sort(function(a, b){return b - a});
 				for(var j = 0; j < modi_ks.length; j++) {
-					var modi = (modi_ks[j] === 'true');
+					var modi = (modi_ks[j] == 'true');
 					var rc_modi = rc_lvl[modi];
 					var prio_ks = Object.keys(rc_modi).sort(function(a, b){return a - b});
 					for(var k = 0; k < prio_ks.length; k++) {
