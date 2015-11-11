@@ -579,7 +579,13 @@ var stackbox_dfan_automaton = (function() {
 			}
 			return _rslt;
 		}).bind(this);
-		_set_flags(src);
+		if(src instanceof Array) {
+			for(var i = 0; i < src.length; i++) {
+				_set_flags(src[i]);
+			}
+		} else {
+			_set_flags(src);
+		}
 		_set_flags(ext[0]);
 		for(var i = 3; i < ext.length; i++) {
 			_set_flags(ext[i]);
@@ -698,7 +704,7 @@ var stackbox_dfan_automaton = (function() {
 				var rc_lvl = rc_st[lvl];
 				var modi_ks = Object.keys(rc_lvl).sort(function(a, b){return b - a});
 				for(var j = 0; j < modi_ks.length; j++) {
-					var modi = modi_ks[j];
+					var modi = (modi_ks[j] === 'true');
 					var rc_modi = rc_lvl[modi];
 					var prio_ks = Object.keys(rc_modi).sort(function(a, b){return a - b});
 					for(var k = 0; k < prio_ks.length; k++) {
@@ -925,7 +931,7 @@ var stackbox_spec_prop = stackbox_dfan_property;
 var stackbox_spec_prop_eqtp = (function(_super) {
 	__extends(stackbox_spec_prop_eqtp, _super);
 	var pos_eq = function(a, b) {
-		return a.eq(b);
+		return a === b || a.eq(b);
 	};
 	function stackbox_spec_prop_eqtp(val) {
 		_super.call(this, val);
@@ -1096,11 +1102,29 @@ var stackbox_spec_graph = (function(_super) {
 	];
 	function stackbox_spec_graph(sprite, box, layer) {
 		_super.call(this);
-		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		this.box = box;
 		this.sprite = sprite;
+		this.layer = layer;
 	}
+	stackbox_spec_graph.prototype.init = function() {
+		this.bind_prop('#trans', new stackbox_spec_prop_trans(null));
+		this.bind_prop('%dirty', true);
+		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		_super.prototype.init.call(this);
+	};
 	stackbox_spec_graph.prototype.set_frame = function(name, cnt) {
-		
+		this.frame =  this.sprite.frame(name, cnt);
+	};
+	stackbox_spec_graph.prototype.inttrig_move = ['@pos', '#trans'];
+	stackbox_spec_graph.prototype.interrupt_move = function(info) {
+		this.prop_set('%dirty', true);
+	};
+	stackbox_spec_graph.prototype.inttrig_updatedraw$a = ['@tick'];
+	stackbox_spec_graph.prototype.interrupt_updatedraw$a = function(info) {
+		if(this.prop_get('%dirty')) {
+			this.box.draw(this.frame, this.prop_get('@pos'), this.layer);
+			this.prop_set('%dirty', false);
+		}
 	};
 	return stackbox_spec_graph;
 })(stackbox_spec_actions);
@@ -1230,12 +1254,14 @@ var stackbox_graph_box = (function() {
 	var default_ztp2layer = function(z, tp, box) {return z;};
 	var default_layer2ztp = function(idx, box) {return [idx, 'stand'];};
 	var default_layer_load = function(z, tp, box) {return null;};
+	var default_dirty_mark = function(range, tp) {};
 	function stackbox_graph_box(deep) {
 		this.static_layers ={};
 		this.dynamic_layers = [];
 		this.ztp2layer = default_ztp2layer;
 		this.layer2ztp = default_layer2ztp;
 		this.layer_load = default_layer_load;
+		this.dirty_mark = default_dirty_mark;
 		this.win_deep = deep;
 		this.win_start = 0;
 	}
@@ -1266,6 +1292,7 @@ var stackbox_graph_box = (function() {
 				"err": "draw out of window",
 			};
 		var info = layer.draw(frame, pos.flat(), trans);
+		this.dirty_mark(frame.range.move_to(pos), tp);
 		info['z'] = pos.z;
 		info['tp'] = tp;
 		return info;
@@ -1423,6 +1450,7 @@ var stackbox_graph_camera = (function() {
 			"static": {},
 			"dynamic": {},
 		};
+		box.dirty_mark = this.dirty.bind(this);
 		this.init_surfaces();
 	}
 	stackbox_graph_camera.prototype.win_start = function() {
@@ -2223,9 +2251,54 @@ function test_inherit_lvl_spec() {
 	return new foo3();
 }
 
+function test5() {
+	stackbox_graph_system.init(
+		document.getElementById('sb_screen'),
+		600, 500
+	);
+	var box = new stackbox_graph_box(6);
+	box.layer_load = function(z, tp, box) {
+		console.log('load layer:', z, tp);
+		return new stackbox_graph_layer();
+	};
+	box.move_to(0, 'stand');
+	box.set_static_layer('bg', new stackbox_graph_layer());
+	var camera = new stackbox_graph_camera(box,
+		new sbtp['rng'](new sbtp['pos'](0, 0, 0), new sbtp['pos'](600, 500, 2)),
+		['dynamic', 'bg']
+	);
+	var tst_sprt = new stackbox_test_sprite(
+		100, 50, 5, 6, {
+			'idle': [
+				'(0, 0)', 'x+4'
+			],
+			'walk': [
+				'(0, 1)', 'x+4'
+			],
+			'jump': [
+				'(0, 2)', 'x+4'
+			],
+		}
+	);
+	var graph_atom = new stackbox_spec_graph(tst_sprt, box, 'stand');
+	graph_atom.act_info = {
+		'idle': [{'duration':1}, {'duration':3, 'loop':true}],
+		'jump': [{'duration':5}, {'duration':10}, {'duration':4, 'loop':false}],
+		'walk': [{'duration':3}, {'duration':3}, {'duration':3}, {'duration':3, 'loop':true}],
+	};
+	var tck = new stackbox_dfan_property(0);
+	graph_atom.bind_prop('@tick', tck);
+	var done = new stackbox_dfan_property(false);
+	graph_atom.bind_prop('@done', done);
+	var pos = new stackbox_spec_prop_pos(new sbtp['pos'](0, 0, 0));
+	graph_atom.bind_prop('@pos', pos);
+	graph_atom.init();
+	return [graph_atom, tck, pos, done];
+}
+
 $(document).ready(function() {
 	console.log('ready');
-	test1();
+	//test1();
 	console.log('done');
 });
 
