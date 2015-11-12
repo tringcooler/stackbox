@@ -732,6 +732,9 @@ var stackbox_dfan_automaton = (function() {
 								r_stack[stack_idx] = tidx;
 							}
 						} else {
+							if(floo && rc_prio.length > 3) {
+								tidx = this._flood_trig(rec, [], rc_prio);
+							}
 							if(prio > 0) {
 								r_stack.push(tidx);
 								stack_idx = r_stack.length - 1;
@@ -835,7 +838,7 @@ var stackbox_dfan_automaton = (function() {
 		if(this._state === null)
 			this._init_triggers();
 		this._state = state;
-		console.log('goto', state);
+		//console.log('goto', state);
 	};
 	/* perf_importance: most */
 	stackbox_dfan_automaton.prototype.from_state = function(state) {
@@ -920,6 +923,13 @@ var stackbox_dfan_automaton = (function() {
 	stackbox_dfan_automaton.prototype.export_prop = function(name) {
 		if(name[0] != SYM_EXPT) return;
 		return this._props_info[name].prop;
+	};
+	stackbox_dfan_automaton.prototype.free_props = function() {
+		//for(var key in this._props_info) {
+		for(var ii = 0, il = Object.keys(this._props_info), key;
+			key = il[ii], ii < il.length; ii++) {
+			this.remove_prop(key);
+		}
 	};
 	return stackbox_dfan_automaton;
 })();
@@ -1238,6 +1248,55 @@ var stackbox_spec_control = (function(_super) {
 		}
 	};
 	return stackbox_spec_control;
+})(stackbox_dfan_automaton);
+
+var stackbox_spec_order_triggers = (function(_super) {
+	__extends(stackbox_spec_order_triggers, _super);
+	var need_prop = [
+		'@src',
+	];
+	function stackbox_spec_order_triggers() {
+		_super.call(this);
+		this.last_idx = -1;
+		this._trigs = [];
+	}
+	//stackbox_spec_order_triggers.prototype.handled_trigger = ['get', 'set'];
+	stackbox_spec_order_triggers.prototype.init = function() {
+		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		if(typeof(this._props_info['@src'].prop._value) == 'object')
+			throw "order trigger doesn't support object value prop.";
+		if(this.handled_trigger.indexOf('set') > -1
+			&& this.handled_trigger.indexOf('change') > -1)
+			throw "shouldn't trigger both set and change";
+		this.new_trigger();
+		this.goto_state('ready');
+	};
+	stackbox_spec_order_triggers.prototype.new_trigger = function(cnt) {
+		if(cnt === undefined) cnt = 1;
+		var src_val = this._props_info['@src'].prop._value;
+		for(var i = 0; i < cnt; i++) {
+			this.last_idx ++;
+			var _nprop = new stackbox_spec_prop(src_val);
+			this.bind_prop('#dst' + this.last_idx, _nprop);
+			this._trigs.push(_nprop);
+		}
+		return this.last_idx;
+	};
+	stackbox_spec_order_triggers.prototype.inttrig_set = ['*@src:change', '*@src:set'];
+	stackbox_spec_order_triggers.prototype.interrupt_set_st$ready = function(info) {
+		console.log('otrigger', info.name, info.trigger, info.val, info.old_val)
+		for(var i = 0; i < this._trigs.length; i++) {
+			this._trigs[i].set(info.val);
+		}
+	};
+	stackbox_spec_order_triggers.prototype.inttrig_get = ['*@src:get'];
+	stackbox_spec_order_triggers.prototype.interrupt_get_st$ready = function(info) {
+		console.log('otrigger', info.name, info.trigger)
+		for(var i = 0; i < this._trigs.length; i++) {
+			this._trigs[i].get();
+		}
+	};
+	return stackbox_spec_order_triggers;
 })(stackbox_dfan_automaton);
 
 /***********************************GRAPH**********************************************/
@@ -2252,6 +2311,43 @@ function test_inherit_lvl_spec() {
 }
 
 function test5() {
+	var inttest = (function(_super) {
+		__extends(inttest, _super);
+		function inttest(idx) {
+			_super.call(this);
+			this.idx = idx
+		}
+		inttest.prototype.handled_trigger = ['get', 'set', 'change'];
+		inttest.prototype.state_any = function(info) {
+			console.log('trigged', this.idx,
+				info.name, info.trigger, info.val, info.old_val);
+			this.goto_state('any');
+		};
+		return inttest;
+	})(stackbox_dfan_automaton);
+	var ot = new stackbox_spec_order_triggers();
+	var st = new stackbox_spec_prop(0);
+	ot.bind_prop('@src', st);
+	ot.init();
+	var dt1 = new inttest(1);
+	var dt2 = new inttest(2);
+	var dt0 = new inttest(0);
+	ot.new_trigger(2);
+	dt1.bind_prop('@dst', ot.export_prop('#dst1'));
+	dt1.goto_state('any');
+	dt2.bind_prop('@dst', ot.export_prop('#dst2'));
+	dt2.goto_state('any');
+	dt0.bind_prop('@dst', ot.export_prop('#dst0'));
+	dt0.goto_state('any');
+	
+	st.set(123);
+	st.set(123);
+	st.set(456);
+	st.get();
+	return [ot, st]
+}
+
+function test6() {
 	stackbox_graph_system.init(
 		document.getElementById('sb_screen'),
 		600, 500
