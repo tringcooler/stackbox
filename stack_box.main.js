@@ -190,12 +190,16 @@ var stackbox_type_range = (function() {
 		return _r;
 	};
 	stackbox_type_range.prototype.collision_with = function(dst) {
-		return !(this.bot.x > dst.top.x
-			|| this.top.x < dst.bot.x
-			|| this.bot.y > dst.top.y
-			|| this.top.y < dst.bot.y
-			|| this.bot.z > dst.top.z
-			|| this.top.z < dst.bot.z);
+		var _r = (this.bot.x > dst.top.x
+			&& this.top.x < dst.bot.x
+			&& this.bot.y > dst.top.y
+			&& this.top.y < dst.bot.y);
+		if(this.dim() == 3 && dst.dim() == 3) {
+			_r = (_r 
+				&& this.bot.z > dst.top.z
+				&& this.top.z < dst.bot.z);
+		}
+		return !_r;
 	};
 	stackbox_type_range.prototype.distance_from = function(dst) {
 		var _t1, _t2;
@@ -1026,6 +1030,7 @@ var stackbox_spec_actions = (function(_super) {
 		this.bind_prop('%duration', 0);
 		this.check_props(need_prop);
 		this.goto_state('idle');
+		//this.state_idle();
 	};
 	stackbox_spec_actions.prototype.actions_check = function() {
 		/*
@@ -1124,7 +1129,9 @@ var stackbox_spec_graph = (function(_super) {
 		_super.prototype.init.call(this);
 	};
 	stackbox_spec_graph.prototype.set_frame = function(name, cnt) {
+		console.log('set', name, cnt);
 		this.frame =  this.sprite.frame(name, cnt);
+		this.prop_set('%dirty', true);
 	};
 	stackbox_spec_graph.prototype.inttrig_move = ['@pos', '#trans'];
 	stackbox_spec_graph.prototype.interrupt_move = function(info) {
@@ -1133,7 +1140,10 @@ var stackbox_spec_graph = (function(_super) {
 	stackbox_spec_graph.prototype.inttrig_updatedraw$a = ['@tick'];
 	stackbox_spec_graph.prototype.interrupt_updatedraw$a = function(info) {
 		if(this.prop_get('%dirty')) {
-			this.box.draw(this.frame, this.prop_get('@pos'), this.layer);
+			if(this._last_drawinfo)
+				this.box.clear(this._last_drawinfo);
+			this._last_drawinfo = this.box.draw(
+				this.frame, this.prop_get('@pos'), this.layer);
 			this.prop_set('%dirty', false);
 		}
 	};
@@ -1269,7 +1279,7 @@ var stackbox_spec_order_triggers = (function(_super) {
 		if(this.handled_trigger.indexOf('set') > -1
 			&& this.handled_trigger.indexOf('change') > -1)
 			throw "shouldn't trigger both set and change";
-		this.new_trigger();
+		//this.new_trigger();
 		this.goto_state('ready');
 	};
 	stackbox_spec_order_triggers.prototype.new_trigger = function(cnt) {
@@ -1283,16 +1293,21 @@ var stackbox_spec_order_triggers = (function(_super) {
 		}
 		return this.last_idx;
 	};
+	stackbox_spec_order_triggers.prototype.get_trigger = function(idx) {
+		if(idx > this.last_idx)
+			this.new_trigger(idx - this.last_idx);
+		return this.export_prop('#dst' + idx);
+	};
 	stackbox_spec_order_triggers.prototype.inttrig_set = ['*@src:change', '*@src:set'];
 	stackbox_spec_order_triggers.prototype.interrupt_set_st$ready = function(info) {
-		console.log('otrigger', info.name, info.trigger, info.val, info.old_val)
+		//console.log('otrigger', info.name, info.trigger, info.val, info.old_val)
 		for(var i = 0; i < this._trigs.length; i++) {
 			this._trigs[i].set(info.val);
 		}
 	};
 	stackbox_spec_order_triggers.prototype.inttrig_get = ['*@src:get'];
 	stackbox_spec_order_triggers.prototype.interrupt_get_st$ready = function(info) {
-		console.log('otrigger', info.name, info.trigger)
+		//console.log('otrigger', info.name, info.trigger)
 		for(var i = 0; i < this._trigs.length; i++) {
 			this._trigs[i].get();
 		}
@@ -1574,16 +1589,28 @@ var stackbox_graph_camera = (function() {
 				var key = this.surfaces.order[i];
 				if(key == 'dynamic') {
 					for(var j = 0; j < this.win_deep; j++) {
+						var dst_suf = this.surfaces.dynamic[j];
+						dst_suf.clear(
+							new stackbox_type_range(
+								new stackbox_type_position(0, 0),
+								this.size.flat()
+							)
+						);
 						this.box.get_layer(j + this.win_start()).blit(
-							this.range.flat(),
-							this.surfaces.dynamic[j],
+							this.range.flat(), dst_suf,
 							new stackbox_type_position(0, 0)
 						);
 					}
 				} else {
+					var dst_suf = this.surfaces.static[key];
+					dst_suf.clear(
+						new stackbox_type_range(
+							new stackbox_type_position(0, 0),
+							this.size.flat()
+						)
+					);
 					this.box.get_layer(key).blit(
-						this.range.flat(),
-						this.surfaces.static[key],
+						this.range.flat(), dst_suf,
 						new stackbox_type_position(0, 0)
 					);
 				}
@@ -1594,18 +1621,20 @@ var stackbox_graph_camera = (function() {
 				var ikey = Number(key);
 				range_s = this.dirty_range.dynamic[key];
 				range_s = range_s.min(this.range.flat());
+				var dst_suf = this.surfaces.dynamic[ikey - this.win_start()];
+				dst_suf.clear(range_s.minus(this.range.top));
 				this.box.get_layer(ikey).blit(
-					range_s,
-					this.surfaces.dynamic[ikey - this.win_start()],
+					range_s, dst_suf,
 					range_s.top.minus(this.range.top)
 				);
 			}
 			for(var key in this.dirty_range.static) {
 				range_s = this.dirty_range.static[key];
 				range_s = range_s.min(this.range.flat());
+				var dst_suf = this.surfaces.static[key];
+				dst_suf.clear(range_s.minus(this.range.top));
 				this.box.get_layer(key).blit(
-					range_s,
-					this.surfaces.static[key],
+					range_s, dst_suf,
 					range_s.top.minus(this.range.top)
 				);
 			}
@@ -1746,9 +1775,9 @@ var stackbox_graph_sprite = (function() {
 			for(var i = 0; i < acts[name].length; i++) {
 				info = acts[name][i];
 				if(typeof(info) == 'string') {
-					var re_trans = /^\s*trans\s*:\s*(.*?)\s*$/;
-					var re_pos = /^\s*\(\s*(\d*)\s*,\s*(\d*)\s*\)\s*$/;
-					var re_brief = /^\s*([xy])\s*([+-])\s*(\d*)\s*$/;
+					var re_trans = /^\s*trans\s*:\s*(.*?)\s*$/.exec(info);
+					var re_pos = /^\s*\(\s*(\d*)\s*,\s*(\d*)\s*\)\s*$/.exec(info);
+					var re_brief = /^\s*([xy])\s*([+-])\s*(\d*)\s*$/.exec(info);
 					if(re_trans) {
 						trans = new stackbox_graph_trans(re_trans[1]);
 					} else if(re_pos) {
@@ -1805,14 +1834,15 @@ var stackbox_test_sprite = (function(_super) {
 		var surf = new stackbox_graph_surface(grid_width * rect_width, grid_height * rect_height);
 		var rect = new stackbox_type_position(rect_width, rect_height);
 		_super.call(this, surf, rect, actions);
+		this._draw_all();
 	}
 	stackbox_test_sprite.prototype._draw_all = function() {
 		var grid = {};
 		for(var k in this.acts) {
-			for(var i = 0; i < acts[k].length; i++) {
-				var frame = acts[k][i];
-				var x = frames.range.top.x;
-				var y = frames.range.top.y;
+			for(var i = 0; i < this.acts[k].length; i++) {
+				var frame = this.acts[k][i];
+				var x = frame.range.top.x;
+				var y = frame.range.top.y;
 				if(stackbox_util.dtab_op(grid, 'get', x, y)) {
 					if(grid[x][y][2] != null)
 						grid[x][y] = [k, i, frame.trans];
@@ -1823,14 +1853,16 @@ var stackbox_test_sprite = (function(_super) {
 		}
 		for(var x in grid) {
 			for(var y in grid[x]) {
-				this._draw_frame(x, y, grid[x][y][0], grid[x][y][1]);
+				this._draw_frame(parseInt(x), parseInt(y), grid[x][y][0], grid[x][y][1]);
 			}
 		}
 	};
 	stackbox_test_sprite.prototype._draw_frame = function(x, y, name, cnt) {
 		var cx = x + this.rect.x / 2;
 		var cy = y + this.rect.y / 2;
-		stackbox_graph_system.draw_text(this.surface.ctx, t_surf_rng.top, name + cnt, 'verdana', 'center', 'middle', null, null, true);
+		stackbox_graph_system.draw_text(this.surface.ctx,
+			new stackbox_type_position(cx, cy),
+			name + cnt, 'verdana', 'center', 'middle', null, null, true);
 	};
 	return stackbox_test_sprite;
 })(stackbox_graph_sprite);
@@ -1885,6 +1917,12 @@ var stackbox_graph_system = {
 		return [ctx.canvas.width, ctx.canvas.height];
 	},
 	append_ctx: function(ctx) {
+		if(!this._cnvs_z) this._cnvs_z = 0;
+		ctx.canvas.style.position = 'absolute';
+		ctx.canvas.style.left = 0;
+		ctx.canvas.style.top = 0;
+		ctx.canvas.style.background = 'transparent';
+		ctx.canvas.style['z-index'] = this._cnvs_z ++;
 		this.screen_div.appendChild(ctx.canvas);
 	},
 	blit: function(src_ctx, src_rng, dst_ctx, dst_pos) {
@@ -1936,6 +1974,29 @@ var stackbox_graph_system = {
 		else
 			ctx.strokeRect(rng.top.x, rng.top.y, rng.len(0), rng.len(1));
 	},
+	debug_show: function(ctx, rng) {
+		if(!this._debug_ctx) {
+			this._debug_ctx = this.new_ctx();
+			this.append_ctx(this._debug_ctx);
+		}
+		this.blit(ctx, rng, this._debug_ctx, new stackbox_type_position(0, 0));
+	},
+	debug_split_canvas: function() {
+		var cvns = this.screen_div.children;
+		var splt = false;
+		if(cvns[0].style.position == 'absolute') splt = true;
+		for(var i = 0; i < cvns.length; i++) {
+			if(splt) {
+				cvns[i].style.removeProperty('position');
+				cvns[i].style.removeProperty('left');
+				cvns[i].style.removeProperty('top');
+			} else {
+				cvns[i].style.position = 'absolute';
+				cvns[i].style.left = 0;
+				cvns[i].style.top = 0;
+			}
+		}
+	},
 };
 
 /*************************************************************************************/
@@ -1944,12 +2005,18 @@ var stackbox_mainloop_system = {
 	fps: 100, //dest
 	tpf: 8, //tick_per_frame
 	tick: new stackbox_dfan_property(0),
+	otrigger: new stackbox_spec_order_triggers(),
 	current_fps: new stackbox_dfan_property(0),
 	_last_time: 0,
 	_loop_handle: null,
 	init: function(fps, tpf) {
 		if(fps) this.fps = fps;
 		if(tpf) this.tpf = tpf;
+		this.otrigger.bind_prop('@src', this.tick);
+		this.otrigger.init();
+	},
+	otick: function(lvl) {
+		return this.otrigger.get_trigger(lvl);
 	},
 	start_loop: function() {
 		var msec = 1000/this.fps;
@@ -1964,7 +2031,7 @@ var stackbox_mainloop_system = {
 		var cur_time = new Date();
 		var delt_time = cur_time - this._last_time;
 		this._last_time = cur_time;
-		this.current_fps.set(1000 / delt_time);
+		this.current_fps.set(Math.floor(1000 / delt_time));
 		this.tick.set(this.tick.get() + this.tpf);
 	},
 };
@@ -2207,6 +2274,8 @@ function test3() {
 		this.set(this.get() + a);
 	};
 	
+	console.log('init done');
+	
 	tck.add(10);
 	tck.add(10);
 	act.set('jump');
@@ -2333,12 +2402,18 @@ function test5() {
 	var dt1 = new inttest(1);
 	var dt2 = new inttest(2);
 	var dt0 = new inttest(0);
-	ot.new_trigger(2);
+	/*ot.new_trigger(3);
 	dt1.bind_prop('@dst', ot.export_prop('#dst1'));
 	dt1.goto_state('any');
 	dt2.bind_prop('@dst', ot.export_prop('#dst2'));
 	dt2.goto_state('any');
 	dt0.bind_prop('@dst', ot.export_prop('#dst0'));
+	dt0.goto_state('any');*/
+	dt1.bind_prop('@dst', ot.get_trigger(1));
+	dt1.goto_state('any');
+	dt2.bind_prop('@dst', ot.get_trigger(2));
+	dt2.goto_state('any');
+	dt0.bind_prop('@dst', ot.get_trigger(0));
 	dt0.goto_state('any');
 	
 	st.set(123);
@@ -2377,20 +2452,49 @@ function test6() {
 			],
 		}
 	);
+	//stackbox_graph_system.debug_show(tst_sprt.surface.ctx, new sbtp['rng'](0, 0, 600, 500))
 	var graph_atom = new stackbox_spec_graph(tst_sprt, box, 'stand');
 	graph_atom.act_info = {
 		'idle': [{'duration':1}, {'duration':3, 'loop':true}],
 		'jump': [{'duration':5}, {'duration':10}, {'duration':4, 'loop':false}],
 		'walk': [{'duration':3}, {'duration':3}, {'duration':3}, {'duration':3, 'loop':true}],
 	};
-	var tck = new stackbox_dfan_property(0);
-	graph_atom.bind_prop('@tick', tck);
+	
+	stackbox_mainloop_system.init();
+	
+	var _daemon_g = (function(_super) {
+		__extends(_daemon_g, _super);
+		function _daemon_g(camera) {
+			_super.call(this);
+			this.camera = camera;
+		}
+		_daemon_g.prototype.inttrig_tick = ['@tick'];
+		_daemon_g.prototype.interrupt_tick_st$ready = function(info) {
+			this.camera.update();
+		};
+		_daemon_g.prototype.inttrig_fps = ['@fps'];
+		_daemon_g.prototype.interrupt_fps_st$ready = function(info) {
+			document.title = 'sb test fps: ' + info.val;
+		};
+		return _daemon_g;
+	})(stackbox_dfan_automaton);
+	var graph_daemon = new _daemon_g(camera);
+	graph_daemon.bind_prop('@tick', stackbox_mainloop_system.otick(4));
+	graph_daemon.bind_prop('@fps', stackbox_mainloop_system.current_fps);
+	graph_daemon.goto_state('ready');
+	
+	graph_atom.bind_prop('@tick', stackbox_mainloop_system.otick(2));
 	var done = new stackbox_dfan_property(false);
 	graph_atom.bind_prop('@done', done);
 	var pos = new stackbox_spec_prop_pos(new sbtp['pos'](0, 0, 0));
 	graph_atom.bind_prop('@pos', pos);
 	graph_atom.init();
-	return [graph_atom, tck, pos, done];
+	
+	stackbox_mainloop_system.start_loop();
+	//stackbox_mainloop_system.mainloop();
+	//stackbox_mainloop_system.mainloop();
+	
+	return [graph_atom, pos, done];
 }
 
 $(document).ready(function() {
