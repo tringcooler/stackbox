@@ -864,26 +864,6 @@ var stackbox_dfan_automaton = (function() {
 		if(name[0] != SYM_IMPT) return;
 		return this._props_info[name].prop.set(val);
 	};
-	stackbox_dfan_automaton.prototype.prop_list = function(own) {
-		var r = [];
-		//for(var k in this._props_info) {
-		for(var ki = 0, kl = Object.keys(this._props_info), k;
-			k = kl[ki], ki < kl.length; ki++) {
-			if(own) {
-				if(k[0] != SYM_IMPT) r.push(k);
-			} else {
-				r.push(k);
-			}
-		}
-		return r;
-	};
-	/* perf_importance: much */
-	stackbox_dfan_automaton.prototype.prop_check = function(need_list) {
-		for(var i = 0; i < need_list.length; i++) {
-			if(/*!in*/this._props_info[need_list[i]] === undefined) return false;
-		}
-		return true;
-	};
 	/* perf_importance: much */
 	stackbox_dfan_automaton.prototype.bind_prop = function(name, prop, hndl_trig) {
 		if(/*in*/this._props_info[name] !== undefined) this.remove_prop(name);
@@ -923,6 +903,27 @@ var stackbox_dfan_automaton = (function() {
 	stackbox_dfan_automaton.prototype.export_prop = function(name) {
 		if(name[0] != SYM_EXPT) return;
 		return this._props_info[name].prop;
+	};
+	stackbox_dfan_automaton.prototype.list_props = function(own) {
+		var r = [];
+		//for(var k in this._props_info) {
+		for(var ki = 0, kl = Object.keys(this._props_info), k;
+			k = kl[ki], ki < kl.length; ki++) {
+			if(own) {
+				if(k[0] != SYM_IMPT) r.push(k);
+			} else {
+				r.push(k);
+			}
+		}
+		return r;
+	};
+	/* perf_importance: much */
+	stackbox_dfan_automaton.prototype.check_props = function(need_list) {
+		for(var i = 0; i < need_list.length; i++) {
+			if(/*!in*/this._props_info[need_list[i]] === undefined)
+				throw 'properties unbind';
+		}
+		return true;
 	};
 	stackbox_dfan_automaton.prototype.free_props = function() {
 		//for(var key in this._props_info) {
@@ -1023,7 +1024,7 @@ var stackbox_spec_actions = (function(_super) {
 		this.bind_prop('#action', new stackbox_spec_prop('__none__'));
 		this.bind_prop('%aniframe', 0);
 		this.bind_prop('%duration', 0);
-		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		this.check_props(need_prop);
 		this.goto_state('idle');
 	};
 	stackbox_spec_actions.prototype.actions_check = function() {
@@ -1119,7 +1120,7 @@ var stackbox_spec_graph = (function(_super) {
 	stackbox_spec_graph.prototype.init = function() {
 		this.bind_prop('#trans', new stackbox_spec_prop_trans(null));
 		this.bind_prop('%dirty', true);
-		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		this.check_props(need_prop);
 		_super.prototype.init.call(this);
 	};
 	stackbox_spec_graph.prototype.set_frame = function(name, cnt) {
@@ -1237,7 +1238,7 @@ var stackbox_spec_control = (function(_super) {
 		}
 	};
 	stackbox_spec_control.prototype.init = function() {
-		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		this.check_props(need_prop);
 		this.goto_state('ready');
 	};
 	stackbox_spec_control.prototype.statrig_ready = ['@controller'];
@@ -1262,7 +1263,7 @@ var stackbox_spec_order_triggers = (function(_super) {
 	}
 	//stackbox_spec_order_triggers.prototype.handled_trigger = ['get', 'set'];
 	stackbox_spec_order_triggers.prototype.init = function() {
-		if(!this.prop_check(need_prop)) throw 'properties unbind';
+		this.check_props(need_prop);
 		if(typeof(this._props_info['@src'].prop._value) == 'object')
 			throw "order trigger doesn't support object value prop.";
 		if(this.handled_trigger.indexOf('set') > -1
@@ -2121,7 +2122,7 @@ function test2() {
 			'get', 'set', 'change'
 		];
 		inttest.prototype.init = function() {
-			this.prop_check(need_prop);
+			this.check_props(need_prop);
 			this.goto_state('start');
 		};
 		inttest.prototype.statrig_start = ['@aa', 'bb'];
