@@ -948,6 +948,8 @@ var stackbox_spec_prop = stackbox_dfan_property;
 
 var stackbox_spec_prop_eqtp = (function(_super) {
 	__extends(stackbox_spec_prop_eqtp, _super);
+	var HK_SET = 'set';
+	var HK_CHANGE = 'change';
 	var pos_eq = function(a, b) {
 		return a === b || a.eq(b);
 	};
@@ -955,6 +957,36 @@ var stackbox_spec_prop_eqtp = (function(_super) {
 		_super.call(this, val);
 		this.__eq__ = pos_eq;
 	}
+	stackbox_spec_prop_eqtp.prototype.set_elem = function(val, elems) {
+		var _t = this._value;
+		var _ve = [];
+		for(var i = 1; i < arguments.length - 1; i++) {
+			_t = _t[arguments[i]];
+			_ve.push(arguments[i]);
+		}
+		var _k = arguments[i];
+		var _v = _t[_k];
+		_ve.push(_k);
+		_ve.unshift(_v);
+		if(!this._hooks_lock.check(HK_SET)) {
+			this._hooks_lock.lock(HK_SET);
+			var r = this._hooks.invoke(HK_SET, val, _ve, this);
+			if(r !== undefined)
+				val = r;
+			this._hooks_lock.unlock(HK_SET);
+		}
+		if(!this._hooks_lock.check(HK_CHANGE)) {
+			if(_v != val) {
+				this._hooks_lock.lock(HK_CHANGE);
+				var r = this._hooks.invoke(HK_CHANGE, val, _ve, this);
+				if(r !== undefined)
+					val = r;
+				this._hooks_lock.unlock(HK_CHANGE);
+			}
+		}
+		_t[_k] = val;
+		return val;
+	};
 	return stackbox_spec_prop_eqtp;
 })(stackbox_dfan_property);
 
@@ -2530,6 +2562,16 @@ function test5() {
 	st.set(123);
 	st.set(456);
 	st.get();
+	
+	var st2 = new stackbox_spec_prop_pos(new sbtp['pos'](0, 0));
+	var dt3 = new inttest(3);
+	dt3.bind_prop('@dst', st2);
+	dt3.goto_state('any');
+	st2.set_elem(123, 'x');
+	st2.set_elem(123, 'x');
+	st2.set_elem(456, 'x');
+	st2.get();
+	
 	return [ot, st]
 }
 
