@@ -1699,11 +1699,23 @@ var stackbox_graph_camera = (function() {
 						);
 					}
 				} else {
-					this.box.get_layer(key).blit(
-						this.range.flat(), this.surfaces.static[key],
-						new stackbox_type_position(0, 0),
-						null, true
-					);
+					if(key.slice(-4) == '_fix') {
+						if(this.dirty_range.static[key] !== undefined) {
+							var range_s = this.dirty_range.static[key];
+							range_s = range_s.min(this.range.flat());
+							this.box.get_layer(key).blit(
+								range_s, this.surfaces.static[key],
+								range_s.top.minus(this.range.top.flat()),
+								null, true
+							);
+						}
+					} else {
+						this.box.get_layer(key).blit(
+							this.range.flat(), this.surfaces.static[key],
+							new stackbox_type_position(0, 0),
+							null, true
+						);
+					}
 				}
 			}
 		} else {
