@@ -97,8 +97,8 @@ var stackbox_type_position = (function() {
 				cen = new stackbox_type_position(0, 0);
 			var _x = this.x - cen.x;
 			var _y = this.y - cen.y;
-			var _nx = Math.floor(_x * Math.cos(rad) - _y * Math.sin(rad));
-			var _ny = Math.floor(_x * Math.sin(rad) + _y * Math.cos(rad));
+			var _nx = /*Math.floor*/(_x * Math.cos(rad) - _y * Math.sin(rad));
+			var _ny = /*Math.floor*/(_x * Math.sin(rad) + _y * Math.cos(rad));
 			return new stackbox_type_position(_nx + cen.x, _ny + cen.y);
 		} else {
 			throw '3d rotate unsupported.';
@@ -225,6 +225,18 @@ var stackbox_type_range = (function() {
 			_r = (_r 
 				|| this.bot.z < dst.top.z
 				|| this.top.z > dst.bot.z);
+		}
+		return !_r;
+	};
+	stackbox_type_range.prototype.contain = function(dst) {
+		var _r = (this.top.x > dst.top.x
+			|| this.bot.x < dst.bot.x
+			|| this.top.y > dst.top.y
+			|| this.bot.y < dst.bot.y);
+		if(this.dim() == 3 && dst.dim() == 3) {
+			_r = (_r 
+				|| this.top.z > dst.top.z
+				|| this.bot.z < dst.bot.z);
 		}
 		return !_r;
 	};
@@ -1853,7 +1865,7 @@ var stackbox_graph_trans = (function() {
 		}
 		return true;
 	};
-	stackbox_graph_trans.prototype.add = function(t) {
+	stackbox_graph_trans.prototype.add = function(t, dpos) {
 		if(!t) return;
 		for(var k in t.info) {
 			var di = t.info[k];
@@ -1862,8 +1874,18 @@ var stackbox_graph_trans = (function() {
 				var si = this.info[k];
 				switch(k) {
 					case 'rotate-center':
-						if(!si.eq(di))
-							throw 'rotate with different center.';
+						if(dpos)
+							di = di.plus(dpos);
+						if(!si.eq(di)) {
+							if(!dpos)
+								throw 'rotate with different center need pos.';
+							ri = stackbox_util.rotate_comb(
+								this.info.rotate, si,
+								t.info.rotate, di
+							);
+						} else {
+							ri = si;
+						}
 						break;
 					case 'rotate':
 						var ang = si + di;
@@ -1931,6 +1953,42 @@ var stackbox_graph_frame = (function() {
 	};
 	return stackbox_graph_frame;
 })();
+
+var stackbox_graph_frame_comb = (function(_super) {
+	__extends(stackbox_graph_frame_comb, _super);
+	var fc_id = 200000;
+	var frm_id = 1;
+	function stackbox_graph_frame_comb(size, trans) {
+		this.range = new stackbox_type_range(
+			0, 0, size.x, size.y);
+		this.trans = trans;
+		this.frame_list = {};
+		this.id = fc_id++;
+	}
+	stackbox_graph_frame_comb.prototype.draw = function(src, pos, trans) {
+		var dirty_range = src.trans_range(trans).plus(pos.minus(src.range.top));
+		if(!this.range.contain(dirty_range)) {
+			return {
+				"id": -1,
+				"err": "draw out of frame_comb",
+			};
+		}
+		this.frame_list[frm_id] = [src, pos, trans, dirty_range];
+		return {
+			"id": this.id,
+			"range": dirty_range,
+			"frmid": frm_id++,
+		};
+	};
+	stackbox_graph_frame_comb.prototype.clear = function(info) {
+		if(info.id != this.id) return false;
+		return (delete this.frame_list[info.frmid]);
+	};
+	stackbox_graph_frame_comb.prototype.blit = function(dst, pos, trans, f_clear) {
+		
+	};
+	return stackbox_graph_frame_comb;
+})(stackbox_graph_frame);
 
 var stackbox_graph_sprite = (function() {
 	function stackbox_graph_sprite(surf, rect_size, actions) {
@@ -2054,6 +2112,8 @@ var stackbox_test_sprite = (function(_super) {
 		stackbox_graph_system.draw_text(this.surface.ctx,
 			new stackbox_type_position(cx, cy),
 			name + cnt, 'verdana', 'center', 'middle', null, null, true);
+		stackbox_graph_system.draw_rect(this.surface.ctx,
+			new stackbox_type_range(x, y, x + this.rect.x, y + this.rect.y), true);
 	};
 	return stackbox_test_sprite;
 })(stackbox_graph_sprite);
@@ -2357,6 +2417,21 @@ var stackbox_util = {
 			default:
 				return;
 		}
+	},
+	rotate_comb: function(rad1, cen1, rad2, cen2) {
+		/*
+		cen3 = cen1 + M (cen2 - cen1)
+		M = [ (1 + cos1 - cos2 - cos3)  (sin1 + sin2 - sin3), (sin3 - sin1 - sin2)  (1 + cos1 - cos2 - cos3)] / (1 - cos3) / 2
+		*/
+		var sin1 = Math.sin(rad1);
+		var sin2 = Math.sin(rad2);
+		var sin3 = Math.sin(rad1 + rad2);
+		var cos1 = Math.cos(rad1);
+		var cos2 = Math.cos(rad2);
+		var cos3 = Math.cos(rad1 + rad2);
+		var cen3x = cen1.x + ((cen2.x - cen1.x) * (1 + cos1 - cos2 - cos3) + (cen2.y - cen1.y) * (sin1 + sin2 - sin3)) / (1 - cos3) / 2;
+		var cen3y = cen1.y + ((cen2.x - cen1.x) * (sin3 - sin1 - sin2) + (cen2.y - cen1.y) * (1 + cos1 - cos2 - cos3)) / (1 - cos3) / 2;
+		return new stackbox_type_position(cen3x, cen3y);
 	},
 	async_checker: (function() {
 		function async_checker() {
@@ -2748,6 +2823,36 @@ function test6() {
 	//stackbox_mainloop_system.mainloop();
 	
 	return [graph_atom, pos, done];
+}
+
+function test7() {
+	var randparm = function(max) {
+		return [
+			new stackbox_type_position(Math.random() * max, Math.random() * max),
+			Math.random() * Math.PI * 2,
+			new stackbox_type_position(Math.random() * max, Math.random() * max),
+			Math.random() * Math.PI * 2,
+			new stackbox_type_position(Math.random() * max, Math.random() * max),
+		];
+	};
+	var calc1 = function(pos, rad1, cen1, rad2, cen2) {
+		return pos.rotate(rad1, cen1).rotate(rad2, cen2);
+	};
+	var calc2 = function(pos, rad1, cen1, rad2, cen2) {
+		return pos.rotate(rad1 + rad2,
+			stackbox_util.rotate_comb(rad1, cen1, rad2, cen2));
+	};
+	var delt = function(v1, v2) {
+		return Math.abs((v1-v2)/(v1+v2));
+	};
+	for(var i = 1; i < 10000; i++) {
+		var rnd = randparm(1000);
+		var p1 = calc1.apply(this, rnd);
+		var p2 = calc2.apply(this, rnd);
+		if(delt(p1.x, p2.x) > 0.001 || delt(p1.y, p2.y) > 0.001)
+			console.log('x:', p1.x, p2.x, 'y:', p1.y, p2.y);
+	}
+	console.log('done');
 }
 
 $(document).ready(function() {
