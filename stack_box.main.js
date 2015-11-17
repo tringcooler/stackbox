@@ -1465,7 +1465,7 @@ var stackbox_graph_box = (function() {
 				"err": "draw out of window",
 			};
 		var info = layer.draw(frame, pos.flat(), trans);
-		var dirty_range = frame.trans_range(trans).plus(pos.minus(frame.range.top));
+		var dirty_range = frame.trans_range(trans).plus(pos);
 		this.dirty_mark(dirty_range, tp);
 		info['dirty_range'] = dirty_range;
 		info['z'] = pos.z;
@@ -1580,10 +1580,8 @@ var stackbox_graph_layer_dynamic = (function() {
 	stackbox_graph_layer_dynamic.prototype.draw = function(frame, pos, trans) {
 		var dst_range = frame.range.move_to(pos);
 		var loc_range = this.range2local(dst_range);
-		var loc_dirty_range = loc_range;
-		var dirty_range = frame.trans_range(trans);
-		if(dirty_range !== frame.range)
-			loc_dirty_range = this.range2local(dirty_range.plus(pos.minus(frame.range.top)));
+		var dirty_range = frame.trans_range(trans).plus(pos);
+		var loc_dirty_range = this.range2local(dirty_range);
 		this.draw_list[dl_id] = [loc_range, frame, trans, loc_dirty_range];
 		return {
 			"id": this.id,
@@ -1609,7 +1607,7 @@ var stackbox_graph_layer_dynamic = (function() {
 			if(loc_range.collision_with(dl[3])) {
 				dl[1].blit(
 					dst_surf, dst_pos.plus(loc_pos),
-					dst_trans && dl[2] && dst_trans.plus(dl[2], loc_pos) || dst_trans || dl[2]
+					dst_trans && dl[2] && dst_trans.plus(dl[2], loc_pos).move_to(loc_pos) || dl[2] || dst_trans && dst_trans.move_to(loc_pos)
 				);
 			}
 		}
@@ -1790,7 +1788,7 @@ var stackbox_graph_surface = (function() {
 	stackbox_graph_surface.prototype.blit = function(src_rng, dst, dst_pos, dst_trans, f_clear) {
 		var dst_rng;
 		if(dst_trans) {
-			dst_rng = dst_trans.range(src_rng).plus(dst_pos.minus(src_rng.top));
+			dst_rng = dst_trans.range(src_rng).plus(dst_pos).minus(src_rng.top);
 			if(f_clear)
 				stackbox_graph_system.clear(dst.ctx, dst_rng);
 			stackbox_graph_system.blit_trans(this.ctx, src_rng, dst.ctx, dst_pos, dst_trans);
@@ -1882,18 +1880,27 @@ var stackbox_graph_trans = (function() {
 							/*if(dpos === undefined)  // dpos === null means the SAME axes
 								throw 'rotate with different center need pos.';*/
 							ri = stackbox_util.rotate_comb(
-								this.info.rotate, si,
-								t.info.rotate, di
+								t.info.rotate, di,
+								this.info.rotate, si
 							);
+							//si out last / di in first
 						} else {
 							ri = si;
 						}
-						break;
-					case 'rotate':
-						var ang = si + di;
+						var ang = this.info.rotate + t.info.rotate;
 						while(ang > 2 * Math.PI) ang -= 2 * Math.PI;
 						while(ang < 0) ang += 2 * Math.PI;
-						ri = ang;
+						this.info.rotate = ang;
+						break;
+					case 'rotate':
+						if(this.info['rotate-center'] === undefined) {
+							var ang = si + di;
+							while(ang > 2 * Math.PI) ang -= 2 * Math.PI;
+							while(ang < 0) ang += 2 * Math.PI;
+							ri = ang;
+						} else {
+							ri = si;
+						}
 						break;
 					case 'flip':
 						//1:x 2:y
@@ -1914,9 +1921,9 @@ var stackbox_graph_trans = (function() {
 			this.info[k] = ri;
 		}
 	};
-	stackbox_graph_trans.prototype.plus = function(t) {
+	stackbox_graph_trans.prototype.plus = function(t, dpos) {
 		var r = this.copy();
-		r.add(t);
+		r.add(t, dpos);
 		return r;
 	};
 	stackbox_graph_trans.prototype.range = function(src_rng) {
@@ -1927,6 +1934,16 @@ var stackbox_graph_trans = (function() {
 			cen = new stackbox_type_position(0, 0);
 		return src_rng.rotate(rad, cen.plus(src_rng.top));
 	};
+	stackbox_graph_trans.prototype.move_to = function(src_pos) {
+		var r = this.copy();
+		var cen;
+		if(this.info['rotate-center'] === undefined)
+			cen = new stackbox_type_position(-src_pos.x, -src_pos.y);
+		else
+			cen = this.info['rotate-center'].minus(src_pos);
+		r.info['rotate-center'] = cen;
+		return r;
+	};
 	return stackbox_graph_trans;
 })();
 
@@ -1934,6 +1951,7 @@ var stackbox_graph_frame = (function() {
 	function stackbox_graph_frame(surface, range, trans) {
 		this.surface = surface;
 		this.range = range;
+		this.dst_range = range.move_to(new stackbox_type_position(0, 0));
 		if(trans === undefined)
 			trans = null;
 		this.trans = trans;
@@ -1945,13 +1963,14 @@ var stackbox_graph_frame = (function() {
 			dst_trans = dst_trans.plus(this.trans);
 		return this.surface.blit(this.range, dst_surf, dst_pos, dst_trans, f_clear);
 	};
-	stackbox_graph_frame.prototype.trans_range = function(dst_trans, dst_pos) {
+	stackbox_graph_frame.prototype.trans_range = function(dst_trans) {
+		// dst_trans must be OUT trans, so no dst_pos
 		var r_trans =
-			dst_trans && this.trans && this.trans.plus(dst_trans, dst_pos) || dst_trans || this.trans;
+			dst_trans && this.trans && dst_trans.plus(this.trans) || dst_trans || this.trans;
 		if(!r_trans)
-			return this.range;
+			return this.dst_range;
 		else
-			return r_trans.range(this.range);
+			return r_trans.range(this.dst_range);
 	};
 	return stackbox_graph_frame;
 })();
@@ -1963,6 +1982,7 @@ var stackbox_graph_frame_comb = (function(_super) {
 	function stackbox_graph_frame_comb(size, trans) {
 		this.range = new stackbox_type_range(
 			0, 0, size.x, size.y);
+		this.dst_range = this.range;
 		if(trans === undefined)
 			trans = null;
 		this.trans = trans;
@@ -1970,7 +1990,7 @@ var stackbox_graph_frame_comb = (function(_super) {
 		this.id = fc_id++;
 	}
 	stackbox_graph_frame_comb.prototype.draw = function(src, pos, trans) {
-		var dirty_range = src.trans_range(trans).plus(pos).minus(src.range.top);
+		var dirty_range = src.trans_range(trans).plus(pos);
 		if(!this.range.contain(dirty_range)) {
 			return {
 				"id": -1,
@@ -1997,7 +2017,7 @@ var stackbox_graph_frame_comb = (function(_super) {
 		if(f_clear) {
 			var dirty_range;
 			if(dst_trans) {
-				dirty_range = dst_trans.range(this.range).plus(dst_pos).minus(this.range.top);
+				dirty_range = dst_trans.range(this.dst_range).plus(dst_pos);
 			} else {
 				dirty_range = this.range.move_to(dst_pos);
 			}
@@ -2012,7 +2032,7 @@ var stackbox_graph_frame_comb = (function(_super) {
 			var frm_dirty_range = frm[3];
 			src_frame.blit(
 				dst_surf, dst_pos.plus(frm_pos),
-				dst_trans && frm_ext_trans && dst_trans.plus(frm_ext_trans, frm_pos) || dst_trans || frm_ext_trans
+				dst_trans && frm_ext_trans && dst_trans.plus(frm_ext_trans, frm_pos).move_to(frm_pos) || frm_ext_trans || dst_trans && dst_trans.move_to(frm_pos)
 			);
 		}
 		return dirty_range;
@@ -2947,11 +2967,20 @@ function test7() {
 			console.log('x:', p1.x, p2.x, 'y:', p1.y, p2.y);
 	}
 	console.log('done');
+	
+	console.log(Math.PI*3/2+35*Math.PI/180, stackbox_util.rotate_comb(Math.PI*3/2, new sbtp.pos(0,25), 35*Math.PI/180, new sbtp.pos(100,25)));
+	console.log(Math.PI*3/2+35*Math.PI/180, stackbox_util.rotate_comb(35*Math.PI/180, new sbtp.pos(100,25), Math.PI*3/2, new sbtp.pos(0,25)));
+	var p1 = calc1(new sbtp.pos(0,0), -Math.PI/2, new sbtp.pos(0,25), 35*Math.PI/180, new sbtp.pos(100,25));
+	var p2 = calc2(new sbtp.pos(0,0), Math.PI*3/2, new sbtp.pos(0,25), 35*Math.PI/180, new sbtp.pos(100,25));
+	console.log('x:', p1.x, p2.x, 'y:', p1.y, p2.y);
+	var p1 = calc1(new sbtp.pos(100,50), -Math.PI/2, new sbtp.pos(0,25), 35*Math.PI/180, new sbtp.pos(100,25));
+	var p2 = calc2(new sbtp.pos(100,50), Math.PI*3/2, new sbtp.pos(0,25), 35*Math.PI/180, new sbtp.pos(100,25));
+	console.log('x:', p1.x, p2.x, 'y:', p1.y, p2.y);
 }
 
 $(document).ready(function() {
 	console.log('ready');
-	//test1();
+	//test6();
 	console.log('done');
 });
 
