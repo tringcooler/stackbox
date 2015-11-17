@@ -1553,7 +1553,7 @@ var stackbox_graph_layer = (function() {
 	};
 	stackbox_graph_layer.prototype.blit = function(src_rng, dst_surf, dst_pos, dst_trans, f_clear) {
 		var loc_range = this.range2local(src_rng);
-		/*return*/ this.surface.blit(loc_range, dst_surf, dst_pos, dst_trans, f_clear);
+		return this.surface.blit(loc_range, dst_surf, dst_pos, dst_trans, f_clear);
 	};
 	stackbox_graph_layer.prototype.clear = function(info) {
 		if(info.id != this.id) return false;
@@ -1594,24 +1594,26 @@ var stackbox_graph_layer_dynamic = (function() {
 	stackbox_graph_layer_dynamic.prototype.blit = function(src_rng, dst_surf, dst_pos, dst_trans, f_clear) {
 		var loc_range = this.range2local(src_rng);
 		if(f_clear) {
-			dst_surf.clear(loc_range.move_to(dst_pos));
+			var dirty_range;
+			if(dst_trans) {
+				dirty_range = dst_trans.range(loc_range).plus(dst_pos).minus(loc_range.top);
+			} else {
+				dirty_range = loc_range.move_to(dst_pos);
+			}
+			dst_surf.clear(dirty_range);
 		}
 		var dl_keys = Object.keys(this.draw_list).sort(function(a,b){return a-b;});
-		//var _trng, _rrng = null;
 		for(var i = 0; i < dl_keys.length; i++) {
 			var dl = this.draw_list[dl_keys[i]];
+			var loc_pos = dl[0].top.minus(loc_range.top);
 			if(loc_range.collision_with(dl[3])) {
-				/*_trng =*/ dl[1].blit(
-					dst_surf, dst_pos.plus(dl[0].top).minus(loc_range.top),
-					//stackbox_util.comb2(dst_trans, dl[2], dst_trans.plus(dl[2]))
-					dst_trans && dl[2] && dst_trans.plus(dl[2]) || dst_trans || dl[2]
+				dl[1].blit(
+					dst_surf, dst_pos.plus(loc_pos),
+					dst_trans && dl[2] && dst_trans.plus(dl[2], loc_pos) || dst_trans || dl[2]
 				);
-				/*if(_rrng)
-					_trng = _rrng.max(_trng);
-				_rrng = _trng;*/
 			}
 		}
-		/*return _rrng;*/
+		return dirty_range;
 	};
 	stackbox_graph_layer_dynamic.prototype.clear = function(info) {
 		if(info.id != this.id) return false;
@@ -1825,7 +1827,7 @@ var stackbox_graph_trans = (function() {
 			var v = kv[1];
 			switch(kv[0]) {
 				case 'rotate-center':
-					var cpos = v.split('-');
+					var cpos = v.split('_');
 					v = new stackbox_type_position(parseInt(cpos[0]), parseInt(cpos[1]));
 					break;
 				case 'rotate':
@@ -1877,8 +1879,8 @@ var stackbox_graph_trans = (function() {
 						if(dpos)
 							di = di.plus(dpos);
 						if(!si.eq(di)) {
-							if(!dpos)
-								throw 'rotate with different center need pos.';
+							/*if(dpos === undefined)  // dpos === null means the SAME axes
+								throw 'rotate with different center need pos.';*/
 							ri = stackbox_util.rotate_comb(
 								this.info.rotate, si,
 								t.info.rotate, di
@@ -1936,16 +1938,16 @@ var stackbox_graph_frame = (function() {
 			trans = null;
 		this.trans = trans;
 	}
-	stackbox_graph_frame.prototype.blit = function(dst, pos, trans, f_clear) {
-		if(!trans)
-			trans = this.trans;
+	stackbox_graph_frame.prototype.blit = function(dst_surf, dst_pos, dst_trans, f_clear) {
+		if(!dst_trans)
+			dst_trans = this.trans;
 		else if(this.trans != null)
-			trans = this.trans.plus(trans);
-		return this.surface.blit(this.range, dst, pos, trans, f_clear);
+			dst_trans = dst_trans.plus(this.trans);
+		return this.surface.blit(this.range, dst_surf, dst_pos, dst_trans, f_clear);
 	};
-	stackbox_graph_frame.prototype.trans_range = function(dst_trans) {
+	stackbox_graph_frame.prototype.trans_range = function(dst_trans, dst_pos) {
 		var r_trans =
-			dst_trans && this.trans && this.trans.plus(dst_trans) || dst_trans || this.trans;
+			dst_trans && this.trans && this.trans.plus(dst_trans, dst_pos) || dst_trans || this.trans;
 		if(!r_trans)
 			return this.range;
 		else
@@ -1961,15 +1963,18 @@ var stackbox_graph_frame_comb = (function(_super) {
 	function stackbox_graph_frame_comb(size, trans) {
 		this.range = new stackbox_type_range(
 			0, 0, size.x, size.y);
+		if(trans === undefined)
+			trans = null;
 		this.trans = trans;
 		this.frame_list = {};
 		this.id = fc_id++;
 	}
 	stackbox_graph_frame_comb.prototype.draw = function(src, pos, trans) {
-		var dirty_range = src.trans_range(trans).plus(pos.minus(src.range.top));
+		var dirty_range = src.trans_range(trans).plus(pos).minus(src.range.top);
 		if(!this.range.contain(dirty_range)) {
 			return {
 				"id": -1,
+				"range": dirty_range,
 				"err": "draw out of frame_comb",
 			};
 		}
@@ -1984,8 +1989,36 @@ var stackbox_graph_frame_comb = (function(_super) {
 		if(info.id != this.id) return false;
 		return (delete this.frame_list[info.frmid]);
 	};
-	stackbox_graph_frame_comb.prototype.blit = function(dst, pos, trans, f_clear) {
-		
+	stackbox_graph_frame_comb.prototype.blit = function(dst_surf, dst_pos, dst_trans, f_clear) {
+		if(!dst_trans)
+			dst_trans = this.trans;
+		else if(this.trans != null)
+			dst_trans = dst_trans.plus(this.trans);
+		if(f_clear) {
+			var dirty_range;
+			if(dst_trans) {
+				dirty_range = dst_trans.range(this.range).plus(dst_pos).minus(this.range.top);
+			} else {
+				dirty_range = this.range.move_to(dst_pos);
+			}
+			dst_surf.clear(dirty_range);
+		}
+		var frm_keys = Object.keys(this.frame_list).sort(function(a,b){return a-b;});
+		for(var i = 0; i < frm_keys.length; i++) {
+			var frm = this.frame_list[frm_keys[i]];
+			var src_frame = frm[0];
+			var frm_pos = frm[1];
+			var frm_ext_trans = frm[2];
+			var frm_dirty_range = frm[3];
+			src_frame.blit(
+				dst_surf, dst_pos.plus(frm_pos),
+				dst_trans && frm_ext_trans && dst_trans.plus(frm_ext_trans, frm_pos) || dst_trans || frm_ext_trans
+			);
+		}
+		return dirty_range;
+	};
+	stackbox_graph_frame_comb.prototype.reset = function() {
+		this.frame_list = {};
 	};
 	return stackbox_graph_frame_comb;
 })(stackbox_graph_frame);
@@ -2117,6 +2150,34 @@ var stackbox_test_sprite = (function(_super) {
 	};
 	return stackbox_test_sprite;
 })(stackbox_graph_sprite);
+
+var stackbox_test_rect_frame = (function(_super) {
+	__extends(stackbox_test_rect_frame, _super);
+	function stackbox_test_rect_frame() {
+		argv = stackbox_util.parse_argv(arguments, {
+			"rng": ["range"],
+			"sz": ["width", "height"],
+		});
+		var width, height;
+		switch(argv.patt) {
+			case 'rng':
+				width = argv.range.len(0);
+				height = argv.range.len(1);
+				break;
+			case 'sz':
+				width = argv.width;
+				height = argv.height;
+				break
+			default:
+				break;
+		}
+		var surf = new stackbox_graph_surface(width+1, height+1);
+		var range = new stackbox_type_range(0, 0, width, height);
+		stackbox_graph_system.draw_rect(surf.ctx, range, true);
+		_super.call(this, surf, range);
+	}
+	return stackbox_test_rect_frame;
+})(stackbox_graph_frame);
 
 /*************************************************************************************/
 
@@ -2766,7 +2827,7 @@ function test6() {
 	var tst_sprt = new stackbox_test_sprite(
 		100, 50, 5, 6, {
 			'idle': [
-				'(0, 0)', 'x+2', 'trans:flip:1,rotate:-90d,rotate-center:0-25', 'x+'
+				'(0, 0)', 'x+2', 'trans:flip:1,rotate:-90d,rotate-center:0_25', 'x+'
 			],
 			'walk': [
 				'(0, 1)', 'x+4'
@@ -2779,7 +2840,7 @@ function test6() {
 	
 	//stackbox_graph_system.debug_show(tst_sprt.surface.ctx, new sbtp['rng'](0, 0, 600, 500))
 	//stackbox_graph_system.append_ctx(box.get_layer(0).surface.ctx);
-	//stackbox_graph_system.debug_split_canvas();
+	stackbox_graph_system.debug_split_canvas();
 	
 	var graph_atom = new stackbox_spec_graph(tst_sprt, box, 'stand');
 	graph_atom.act_info = {
@@ -2818,9 +2879,42 @@ function test6() {
 	graph_atom.bind_prop('@pos', pos);
 	graph_atom.init();
 	
-	stackbox_mainloop_system.start_loop();
+	//stackbox_mainloop_system.start_loop();
 	//stackbox_mainloop_system.mainloop();
 	//stackbox_mainloop_system.mainloop();
+	
+	var frmc = new stackbox_graph_frame_comb(new sbtp.pos(400, 400));
+	var _throw_info = function(info) {
+		return _info.err + ': (' +
+			_info.range.top.x + ', ' +
+			_info.range.top.y + ', ' +
+			_info.range.bot.x + ', ' +
+			_info.range.bot.y + ', ' + ')';
+	};
+	var _info = frmc.draw(new stackbox_test_rect_frame(400, 400), new sbtp.pos(0, 0));
+	if(_info.id == -1) throw _throw_info(_info);
+	
+	_info = frmc.draw(tst_sprt.frame('idle', 0), new sbtp.pos(100, 30));
+	if(_info.id == -1) throw _throw_info(_info);
+	_info = frmc.draw(tst_sprt.frame('idle', 0), new sbtp.pos(100, 30),
+		new stackbox_graph_trans('flip:2,rotate:30d,rotate-center:50_-25'));
+	if(_info.id == -1) throw _throw_info(_info);
+	frmc.draw(new stackbox_test_rect_frame(_info.range), _info.range.top);
+	
+	_info = frmc.draw(tst_sprt.frame('idle', 3), new sbtp.pos(30, 240));
+	if(_info.id == -1) throw _throw_info(_info);
+	_info = frmc.draw(tst_sprt.frame('idle', 3), new sbtp.pos(30, 240),
+		new stackbox_graph_trans('flip:1,rotate:35d,rotate-center:100_25'));
+	if(_info.id == -1) throw _throw_info(_info);
+	frmc.draw(new stackbox_test_rect_frame(_info.range), _info.range.top);
+	
+	/*_info = frmc.draw(tst_sprt.frame('idle', 3), new sbtp.pos(30, 240),
+		new stackbox_graph_trans('flip:1,rotate:36d,rotate-center:100_25'));
+	if(_info.id == -1) throw _throw_info(_info);*/
+	box.draw(frmc, new sbtp.pos(150, 0, 0), 'stand');
+	box.draw(frmc, new sbtp.pos(150, 0, 1), 'stand',
+		new stackbox_graph_trans('flip:3,rotate:10d,rotate-center:0_0'));
+	camera.update();
 	
 	return [graph_atom, pos, done];
 }
