@@ -1866,59 +1866,66 @@ var stackbox_graph_trans = (function() {
 		return true;
 	};
 	stackbox_graph_trans.prototype.add = function(t, dpos) {
+		/*      commutative  associative  distributive
+		rotate:     X            O           + (flip-all *)
+		*/
 		if(!t) return;
-		for(var k in t.info) {
-			var di = t.info[k];
-			var ri = di;
-			if(k in this.info) {
-				var si = this.info[k];
-				switch(k) {
-					case 'rotate-center':
-						if(dpos)
-							di = di.plus(dpos);
-						if(!si.eq(di)) {
-							/*if(dpos === undefined)  // dpos === null means the SAME axes
-								throw 'rotate with different center need pos.';*/
-							ri = stackbox_util.rotate_comb(
-								t.info.rotate, di,
-								this.info.rotate, si
-							);
-							//si out last / di in first
-						} else {
-							ri = si;
-						}
-						var ang = this.info.rotate + t.info.rotate;
-						while(ang > 2 * Math.PI) ang -= 2 * Math.PI;
-						while(ang < 0) ang += 2 * Math.PI;
-						this.info.rotate = ang;
-						break;
-					case 'rotate':
-						if(this.info['rotate-center'] === undefined) {
-							var ang = si + di;
-							while(ang > 2 * Math.PI) ang -= 2 * Math.PI;
-							while(ang < 0) ang += 2 * Math.PI;
-							ri = ang;
-						} else {
-							ri = si;
-						}
-						break;
-					case 'flip':
-						//1:x 2:y
-						ri = (si ^ di);
-						break;
-					case 'scale':
-						ri = si * di;
-						break;
-					case 'alpha':
-						ri = si * di;
-						break;
-					case 'scale2':
-						//scale_to do not support
-					default:
-						break;
-				}
+		var di, si;
+		var _chk = (function(k) {
+			if((di = t.info[k]) !== undefined) {
+				if((si = this.info[k]) !== undefined)
+					return true;
+				else
+					this.info[k] = di;
 			}
-			this.info[k] = ri;
+			return false;
+		}).bind(this);
+		if(_chk('flip-all-center')) {
+			if(dpos)
+				di = di.plus(dpos);
+			if(!si.eq(di)) {
+				//si out last / di in first
+				this.info['flip-all-center'] = stackbox_util.flip_comb(
+					t.info['flip-all'], di,
+					this.info['flip-all'], si
+				);
+			}
+		}
+		var flip_carry = 0;
+		if(_chk('flip-all')) {
+			//1:x 2:y
+			this.info['flip-all'] = (si | di);
+			flip_carry = (si & di);
+		}
+		if(_chk('rotate-center')) {
+			if(dpos)
+				di = di.plus(dpos);
+			if(!si.eq(di)) {
+				//si out last / di in first
+				this.info['rotate-center'] = stackbox_util.rotate_comb(
+					t.info['rotate'], di,
+					this.info['rotate'], si
+				);
+			}
+		}
+		if(_chk('rotate')) {
+			var ang = si + di;
+			while(ang > 2 * Math.PI) ang -= 2 * Math.PI;
+			while(ang < 0) ang += 2 * Math.PI;
+			this.info['rotate'] = ang;
+		}
+		if(_chk('flip')) {
+			//1:x 2:y
+			this.info['flip'] = (si ^ di ^ flip_carry);
+		}
+		if(_chk('scale')) {
+			this.info['scale'] = si * di;
+		}
+		if(_chk('alpha')) {
+			this.info['alpha'] = si * di;
+		}
+		if(_chk('scale2')) {
+			//scale_to do not support
 		}
 	};
 	stackbox_graph_trans.prototype.plus = function(t, dpos) {
@@ -2292,7 +2299,20 @@ var stackbox_graph_system = {
 	},
 	trans: function(ctx, info, dpos) {
 		var ti;
-		if((ti = info.rotate) !== undefined) {
+		if((ti = info['flip-all']) !== undefined) {
+			var _x = 1;
+			var _y = 1;
+			if(ti & 1) _x = -1;
+			if(ti & 2) _y = -1;
+			var cpos;
+			if((cpos = info['flip-all-center']) === undefined)
+				cpos = new stackbox_type_position(0, 0);
+			cpos = cpos.plus(dpos);
+			ctx.translate(cpos.x, cpos.y);
+			ctx.scale(_x, _y);
+			ctx.translate(-cpos.x, -cpos.y);
+		}
+		if((ti = info['rotate']) !== undefined) {
 			var cpos;
 			if((cpos = info['rotate-center']) === undefined)
 				cpos = new stackbox_type_position(0, 0);
@@ -2301,17 +2321,17 @@ var stackbox_graph_system = {
 			ctx.rotate(ti);
 			ctx.translate(-cpos.x, -cpos.y);
 		}
-		if((ti = info.flip) !== undefined) {
+		if((ti = info['flip']) !== undefined) {
 			var _x = 1;
 			var _y = 1;
 			if(ti & 1) _x = -1;
 			if(ti & 2) _y = -1;
 			ctx.scale(_x, _y);
 		}
-		if((ti = info.scale) !== undefined) {
+		if((ti = info['scale']) !== undefined) {
 			ctx.scale(ti, ti);
 		}
-		if((ti = info.alpha) !== undefined) {
+		if((ti = info['alpha']) !== undefined) {
 			ctx.globalAlpha = ti;
 		}
 	},
@@ -2513,6 +2533,21 @@ var stackbox_util = {
 		var cen3x = cen1.x + ((cen2.x - cen1.x) * (1 + cos1 - cos2 - cos3) + (cen2.y - cen1.y) * (sin1 + sin2 - sin3)) / (1 - cos3) / 2;
 		var cen3y = cen1.y + ((cen2.x - cen1.x) * (sin3 - sin1 - sin2) + (cen2.y - cen1.y) * (1 + cos1 - cos2 - cos3)) / (1 - cos3) / 2;
 		return new stackbox_type_position(cen3x, cen3y);
+	},
+	flip_comb: function(flip1, cen1, flip2, cen2) {
+		
+	},
+	//flip->rotate  <=>  rotate->flip 
+	frswap_r_cen: function(flip, cenf, cenr) {
+		var cen = cenr.copy();
+		if(flip & 1) cen.x = 2 * cenf.x - cenr.x;
+		if(flip & 2) cen.y = 2 * cenf.y - cenr.y;
+		return cen;
+	},
+	frswap_r_rad: function(flip, rad) {
+		return
+			(flip == 1 || flip == 2)
+			&& - rad || rad;
 	},
 	async_checker: (function() {
 		function async_checker() {
@@ -2847,7 +2882,7 @@ function test6() {
 	var tst_sprt = new stackbox_test_sprite(
 		100, 50, 5, 6, {
 			'idle': [
-				'(0, 0)', 'x+2', 'trans:flip:1,rotate:-90d,rotate-center:0_25', 'x+'
+				'(0, 0)', 'x+2', 'trans:flip:1,rotate:-85d,rotate-center:0_25', 'x+'
 			],
 			'walk': [
 				'(0, 1)', 'x+4'
@@ -2895,7 +2930,7 @@ function test6() {
 	graph_atom.bind_prop('@tick', stackbox_mainloop_system.otick(2));
 	var done = new stackbox_dfan_property(false);
 	graph_atom.bind_prop('@done', done);
-	var pos = new stackbox_spec_prop_pos(new sbtp['pos'](100, 100, 0));
+	var pos = new stackbox_spec_prop_pos(new sbtp['pos'](100, 100, 1));
 	graph_atom.bind_prop('@pos', pos);
 	graph_atom.init();
 	
@@ -2924,16 +2959,13 @@ function test6() {
 	_info = frmc.draw(tst_sprt.frame('idle', 3), new sbtp.pos(30, 240));
 	if(_info.id == -1) throw _throw_info(_info);
 	_info = frmc.draw(tst_sprt.frame('idle', 3), new sbtp.pos(30, 240),
-		new stackbox_graph_trans('flip:1,rotate:35d,rotate-center:100_25'));
+		new stackbox_graph_trans('flip:1,rotate:50d,rotate-center:100_25'));
 	if(_info.id == -1) throw _throw_info(_info);
 	frmc.draw(new stackbox_test_rect_frame(_info.range), _info.range.top);
 	
-	/*_info = frmc.draw(tst_sprt.frame('idle', 3), new sbtp.pos(30, 240),
-		new stackbox_graph_trans('flip:1,rotate:36d,rotate-center:100_25'));
-	if(_info.id == -1) throw _throw_info(_info);*/
 	box.draw(frmc, new sbtp.pos(150, 0, 0), 'stand');
 	box.draw(frmc, new sbtp.pos(150, 0, 1), 'stand',
-		new stackbox_graph_trans('flip:3,rotate:10d,rotate-center:0_0'));
+		new stackbox_graph_trans('flip:3,rotate:15d,rotate-center:0_0'));
 	camera.update();
 	
 	return [graph_atom, pos, done];
@@ -2980,7 +3012,7 @@ function test7() {
 
 $(document).ready(function() {
 	console.log('ready');
-	//test6();
+	test6();
 	console.log('done');
 });
 
