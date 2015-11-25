@@ -2378,20 +2378,14 @@ var stackbox_graph_system = {
 	blit_trans: function(src_ctx, src_rng, dst_ctx, dst_pos, dst_trans) {
 		var w = src_rng.len(0);
 		var h = src_rng.len(1);
-		var dx = dst_pos.x;
-		var dy = dst_pos.y;
-		var dw = w;
-		var dh = h;
 		dst_ctx.save();
-		if(dst_trans.info.shift)
-			dst_pos = dst_pos.plus(dst_trans.info.shift);
 		this.trans(dst_ctx, dst_trans.info, dst_pos);
 		if(dst_trans.info.flip) {
 			if(dst_trans.info.flip & 1) {
-				dst_ctx.translate(-dw, 0);
+				dst_ctx.translate(-w, 0);
 			}
 			if(dst_trans.info.flip & 2) {
-				dst_ctx.translate(0, -dh);
+				dst_ctx.translate(0, -h);
 			}
 		}
 		dst_ctx.drawImage(src_ctx.canvas, src_rng.top.x, src_rng.top.y, w, h, 0, 0, w, h);
@@ -2408,6 +2402,9 @@ var stackbox_graph_system = {
 		P1 = rotate(rad, flip(xy, scale(sc, P0))) + Shift
 		*/
 		var ti;
+		if((ti = info['shift']) !== undefined) {
+			dpos = dpos.plus(ti);
+		}
 		ctx.translate(dpos.x, dpos.y);
 		if((ti = info['rotate']) !== undefined) {
 			ctx.rotate(ti);
