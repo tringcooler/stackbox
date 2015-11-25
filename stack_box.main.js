@@ -91,6 +91,19 @@ var stackbox_type_position = (function() {
 		r.z = null;
 		return r;
 	};
+	stackbox_type_position.prototype.flip = function(flp, cen) {
+		if(this.dim() == 2) {
+			if(cen === undefined)
+				cen = new stackbox_type_position(0, 0);
+			var _x = this.x;
+			var _y = this.y;
+			if(flp & 1) _x = 2 * cen.x - _x;
+			if(flp & 2) _y = 2 * cen.y - _y;
+			return new stackbox_type_position(_x, _y);
+		} else {
+			throw '3d rotate unsupported.';
+		}
+	};
 	stackbox_type_position.prototype.rotate = function(rad, cen) {
 		if(this.dim() == 2) {
 			if(cen === undefined)
@@ -286,6 +299,30 @@ var stackbox_type_range = (function() {
 			_bot.z = dst.bot.z;
 		}
 		return new stackbox_type_range(_top, _bot);
+	};
+	stackbox_type_range.prototype.flip = function(flp, cen) {
+		if(this.dim() == 2) {
+			if(cen === undefined)
+				cen = new stackbox_type_position(0, 0);
+			var _p = this.top.flip(flp, cen);
+			var _r = new stackbox_type_range(_p.x, _p.y, _p.x, _p.y);
+			var _mod = function(np) {
+				if(np.x < _r.top.x)
+					_r.top.x = np.x;
+				if(np.y < _r.top.y)
+					_r.top.y = np.y;
+				if(np.x > _r.bot.x)
+					_r.bot.x = np.x;
+				if(np.y > _r.bot.y)
+					_r.bot.y = np.y;
+			};
+			_mod(this.righttop().flip(flp, cen));
+			_mod(this.leftbot().flip(flp, cen));
+			_mod(this.bot.flip(flp, cen));
+			return _r;
+		} else {
+			throw '3d rotate unsupported.';
+		}
 	};
 	stackbox_type_range.prototype.rotate = function(rad, cen) {
 		if(this.dim() == 2) {
@@ -1594,7 +1631,7 @@ var stackbox_graph_layer_dynamic = (function() {
 		if(f_clear) {
 			var dirty_range;
 			if(dst_trans) {
-				dirty_range = dst_trans.range(loc_range).plus(dst_pos).minus(loc_range.top);
+				dirty_range = dst_trans.range(loc_range.minus(loc_range.top)).plus(dst_pos);
 			} else {
 				dirty_range = loc_range.move_to(dst_pos);
 			}
@@ -1607,7 +1644,7 @@ var stackbox_graph_layer_dynamic = (function() {
 			if(loc_range.collision_with(dl[3])) {
 				dl[1].blit(
 					dst_surf, dst_pos.plus(loc_pos),
-					dst_trans && dl[2] && dst_trans.plus(dl[2], loc_pos).move_to(loc_pos) || dl[2] || dst_trans && dst_trans.move_to(loc_pos)
+					dst_trans && dl[2] && dst_trans.move_to(loc_pos).plus(dl[2]) || dl[2] || dst_trans && dst_trans.move_to(loc_pos)
 				);
 			}
 		}
@@ -1788,7 +1825,7 @@ var stackbox_graph_surface = (function() {
 	stackbox_graph_surface.prototype.blit = function(src_rng, dst, dst_pos, dst_trans, f_clear) {
 		var dst_rng;
 		if(dst_trans) {
-			dst_rng = dst_trans.range(src_rng).plus(dst_pos).minus(src_rng.top);
+			dst_rng = dst_trans.range(src_rng.minus(src_rng.top)).plus(dst_pos);
 			if(f_clear)
 				stackbox_graph_system.clear(dst.ctx, dst_rng);
 			stackbox_graph_system.blit_trans(this.ctx, src_rng, dst.ctx, dst_pos, dst_trans);
@@ -1811,38 +1848,89 @@ var stackbox_graph_surface = (function() {
 
 var stackbox_graph_trans = (function() {
 	function stackbox_graph_trans(info) {
-		if(typeof(info) == 'string')
+		if(info === undefined)
+			this.info = {};
+		else if(typeof(info) == 'string')
 			this.info = this.parse_str(info);
 		else
 			this.info = info;
 	}
 	stackbox_graph_trans.prototype.parse_str = function(s) {
+		/*
+		rotate(flipa(flip(scale(alpha(P))), Cf), Cr)
+		=> shift(rotate(flipa(flip(scale(alpha(P))))), Ps)
+		*/
 		var ti = s.split(',');
 		var info = {};
+		var rcen = null;
+		var fcen = null;
 		for(var i = 0; i < ti.length; i++) {
 			var kv = ti[i].split(':');
 			var k = kv[0];
 			var v = kv[1];
 			switch(kv[0]) {
+				case 'flipa-center':
+					var cpos = v.split('_');
+					var fcen = new stackbox_type_position(parseInt(cpos[0]), parseInt(cpos[1]));
+					break;
 				case 'rotate-center':
 					var cpos = v.split('_');
-					v = new stackbox_type_position(parseInt(cpos[0]), parseInt(cpos[1]));
+					var rcen = new stackbox_type_position(parseInt(cpos[0]), parseInt(cpos[1]));
 					break;
+				case 'shift':
+					var spos = v.split('_');
+					info[k] =  new stackbox_type_position(parseInt(spos[0]), parseInt(spos[1]));
 				case 'rotate':
 					if(v[v.length-1] == 'd') {
 						v = parseFloat(v);
-						v = v * Math.PI / 180;
+						info[k] = v * Math.PI / 180;
 						break;
 					}
+				case 'flipa':
 				case 'flip':
 				case 'scale':
 				case 'alpha':
-					v = parseFloat(v);
+					info[k] = parseFloat(v);
 					break;	
 				default:
 					break;
 			}
-			info[k] = v;
+		}
+		if(rcen || fcen) {
+			var shft = new stackbox_type_position(0, 0);
+			var rad = info['rotate'];
+			if(rad !== undefined)
+				rad = {
+					"cos": Math.cos(rad),
+					"sin": Math.sin(rad),
+				};
+			var flp = info['flipa'];
+			if(rcen) {
+				if(rad === undefined) throw 'need rotate.';
+				var _x = (1 - rad.cos) * rcen.x + rad.sin * rcen.y;
+				var _y = - rad.sin * rcen.x + (1 - rad.cos) * rcen.y;
+				shft.x += _x;
+				shft.y += _y;
+			}
+			if(fcen) {
+				if(flp === undefined) throw 'need flipa.';
+				var _x = 0;
+				var _y = 0;
+				if(flp & 1) _x = fcen.x * 2;
+				if(flp & 2) _y = fcen.y * 2;
+				if(rad !== undefined) {
+					var __x = rad.cos * _x - rad.sin * _y;
+					var __y = rad.sin * _x + rad.cos * _y;
+					_x = __x;
+					_y = __y;
+				}
+				shft.x += _x;
+				shft.y += _y;
+			}
+			if(info['shift'] === undefined)
+				info['shift'] = shft;
+			else
+				info['shift'].add(shft);
 		}
 		return info;
 	};
@@ -1869,6 +1957,10 @@ var stackbox_graph_trans = (function() {
 		/*      commutative  associative  distributive
 		rotate:     X            O           + (flip-all *)
 		*/
+		/*
+		shift(rotate(flip(shift(rotate(flipa(flip(scale(P)))), S1 + dPos))), S2)
+		=> shift(rotate(flipa(flip(scale(P)))), S3)
+		*/
 		if(!t) return;
 		var di, si;
 		var _chk = (function(k) {
@@ -1880,52 +1972,63 @@ var stackbox_graph_trans = (function() {
 			}
 			return false;
 		}).bind(this);
-		if(_chk('flip-all-center')) {
-			if(dpos)
+		if(dpos || (di = t.info['shift']) !== undefined) {
+			if(di === undefined)
+				di = dpos;
+			else if(dpos)
 				di = di.plus(dpos);
-			if(!si.eq(di)) {
-				//si out last / di in first
-				this.info['flip-all-center'] = stackbox_util.flip_comb(
-					t.info['flip-all'], di,
-					this.info['flip-all'], si
-				);
+			var rad = this.info['rotate'];
+			var flp = this.info['flipa'];
+			if(rad !== undefined) {
+				rad = {
+					"cos": Math.cos(rad),
+					"sin": Math.sin(rad),
+				};
 			}
-		}
-		var flip_carry = 0;
-		if(_chk('flip-all')) {
-			//1:x 2:y
-			this.info['flip-all'] = (si | di);
-			flip_carry = (si & di);
-		}
-		if(_chk('rotate-center')) {
-			if(dpos)
-				di = di.plus(dpos);
-			if(!si.eq(di)) {
-				//si out last / di in first
-				this.info['rotate-center'] = stackbox_util.rotate_comb(
-					t.info['rotate'], di,
-					this.info['rotate'], si
-				);
+			var _x = di.x;
+			var _y = di.y;
+			if(flp) {
+				if(flp & 1) _x = -_x;
+				if(flp & 2) _y = -_y;
+			}
+			if(rad) {
+				var __x = rad.cos * _x - rad.sin * _y;
+				var __y = rad.sin * _x + rad.cos * _y;
+				_x = __x;
+				_y = __y;
+			}
+			var shft = new stackbox_type_position(_x, _y);
+			if((si = this.info['shift']) !== undefined) {
+				this.info['shift'] = this.info['shift'].plus(shft);
+			} else {
+				this.info['shift'] = shft;
 			}
 		}
 		if(_chk('rotate')) {
-			var ang = si + di;
+			var ang;
+			var _flp = this.info['flipa']
+			if(_flp == 1 || _flp == 2) {
+				ang = si - di;
+			} else {
+				ang = si + di;
+			}
 			while(ang > 2 * Math.PI) ang -= 2 * Math.PI;
 			while(ang < 0) ang += 2 * Math.PI;
 			this.info['rotate'] = ang;
 		}
+		if(_chk('flipa')) {
+			//1:x 2:y
+			this.info['flipa'] = (si ^ di);
+		}
 		if(_chk('flip')) {
 			//1:x 2:y
-			this.info['flip'] = (si ^ di ^ flip_carry);
+			this.info['flip'] = (si ^ di);
 		}
 		if(_chk('scale')) {
 			this.info['scale'] = si * di;
 		}
 		if(_chk('alpha')) {
 			this.info['alpha'] = si * di;
-		}
-		if(_chk('scale2')) {
-			//scale_to do not support
 		}
 	};
 	stackbox_graph_trans.prototype.plus = function(t, dpos) {
@@ -1934,21 +2037,24 @@ var stackbox_graph_trans = (function() {
 		return r;
 	};
 	stackbox_graph_trans.prototype.range = function(src_rng) {
-		var rad, cen;
-		if((rad = this.info['rotate']) === undefined)
-			return src_rng;
-		if((cen = this.info['rotate-center']) === undefined)
-			cen = new stackbox_type_position(0, 0);
-		return src_rng.rotate(rad, cen.plus(src_rng.top));
+		var flp, rad, shft;
+		var r_rng = src_rng;
+		if((flp = this.info['flipa']) !== undefined) {
+			r_rng = src_rng.flip(flp);
+		}
+		if((rad = this.info['rotate']) !== undefined) {
+			r_rng = r_rng.rotate(rad);
+		}
+		if((shft = this.info['shift']) !== undefined) {
+			r_rng = r_rng.plus(shft);
+		}
+		return r_rng;
 	};
 	stackbox_graph_trans.prototype.move_to = function(src_pos) {
 		var r = this.copy();
-		var cen;
-		if(this.info['rotate-center'] === undefined)
-			cen = new stackbox_type_position(-src_pos.x, -src_pos.y);
-		else
-			cen = this.info['rotate-center'].minus(src_pos);
-		r.info['rotate-center'] = cen;
+		if(src_pos.is_zero()) return r;
+		r.add(new stackbox_graph_trans(), src_pos);
+		r.info['shift'].sub(src_pos);
 		return r;
 	};
 	return stackbox_graph_trans;
@@ -2039,7 +2145,7 @@ var stackbox_graph_frame_comb = (function(_super) {
 			var frm_dirty_range = frm[3];
 			src_frame.blit(
 				dst_surf, dst_pos.plus(frm_pos),
-				dst_trans && frm_ext_trans && dst_trans.plus(frm_ext_trans, frm_pos).move_to(frm_pos) || frm_ext_trans || dst_trans && dst_trans.move_to(frm_pos)
+				dst_trans && frm_ext_trans && dst_trans.move_to(frm_pos).plus(frm_ext_trans) || frm_ext_trans || dst_trans && dst_trans.move_to(frm_pos)
 			);
 		}
 		return dirty_range;
@@ -2277,18 +2383,18 @@ var stackbox_graph_system = {
 		var dw = w;
 		var dh = h;
 		dst_ctx.save();
+		if(dst_trans.info.shift)
+			dst_pos = dst_pos.plus(dst_trans.info.shift);
 		this.trans(dst_ctx, dst_trans.info, dst_pos);
 		if(dst_trans.info.flip) {
 			if(dst_trans.info.flip & 1) {
-				dx = -dx;
-				dw = -dw;
+				dst_ctx.translate(-dw, 0);
 			}
 			if(dst_trans.info.flip & 2) {
-				dy = -dy;
-				dh = -dh;
+				dst_ctx.translate(0, -dh);
 			}
 		}
-		dst_ctx.drawImage(src_ctx.canvas, src_rng.top.x, src_rng.top.y, w, h, dx, dy, dw, dh);
+		dst_ctx.drawImage(src_ctx.canvas, src_rng.top.x, src_rng.top.y, w, h, 0, 0, w, h);
 		dst_ctx.restore();
 	},
 	clear: function(ctx, rng) {
@@ -2298,28 +2404,20 @@ var stackbox_graph_system = {
 		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 	},
 	trans: function(ctx, info, dpos) {
+		/*
+		P1 = rotate(rad, flip(xy, scale(sc, P0))) + Shift
+		*/
 		var ti;
-		if((ti = info['flip-all']) !== undefined) {
+		ctx.translate(dpos.x, dpos.y);
+		if((ti = info['rotate']) !== undefined) {
+			ctx.rotate(ti);
+		}
+		if((ti = info['flipa']) !== undefined) {
 			var _x = 1;
 			var _y = 1;
 			if(ti & 1) _x = -1;
 			if(ti & 2) _y = -1;
-			var cpos;
-			if((cpos = info['flip-all-center']) === undefined)
-				cpos = new stackbox_type_position(0, 0);
-			cpos = cpos.plus(dpos);
-			ctx.translate(cpos.x, cpos.y);
 			ctx.scale(_x, _y);
-			ctx.translate(-cpos.x, -cpos.y);
-		}
-		if((ti = info['rotate']) !== undefined) {
-			var cpos;
-			if((cpos = info['rotate-center']) === undefined)
-				cpos = new stackbox_type_position(0, 0);
-			cpos = cpos.plus(dpos);
-			ctx.translate(cpos.x, cpos.y);
-			ctx.rotate(ti);
-			ctx.translate(-cpos.x, -cpos.y);
 		}
 		if((ti = info['flip']) !== undefined) {
 			var _x = 1;
@@ -2934,7 +3032,7 @@ function test6() {
 	graph_atom.bind_prop('@pos', pos);
 	graph_atom.init();
 	
-	//stackbox_mainloop_system.start_loop();
+	stackbox_mainloop_system.start_loop();
 	//stackbox_mainloop_system.mainloop();
 	//stackbox_mainloop_system.mainloop();
 	
@@ -2965,7 +3063,7 @@ function test6() {
 	
 	box.draw(frmc, new sbtp.pos(150, 0, 0), 'stand');
 	box.draw(frmc, new sbtp.pos(150, 0, 1), 'stand',
-		new stackbox_graph_trans('flip:3,rotate:15d,rotate-center:0_0'));
+		new stackbox_graph_trans('flipa:3,flipa-center:200_200,rotate:15d,rotate-center:0_0'));
 	camera.update();
 	
 	return [graph_atom, pos, done];
