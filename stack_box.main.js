@@ -1905,6 +1905,9 @@ var stackbox_graph_trans = (function() {
 					"sin": Math.sin(rad),
 				};
 			var flp = info['flipa'];
+			var scl = info['scale'];
+			if(scl === undefined)
+				scl = 1;
 			if(rcen) {
 				if(rad === undefined) throw 'need rotate.';
 				var _x = (1 - rad.cos) * rcen.x + rad.sin * rcen.y;
@@ -1914,10 +1917,12 @@ var stackbox_graph_trans = (function() {
 			}
 			if(fcen) {
 				if(flp === undefined) throw 'need flipa.';
-				var _x = 0;
-				var _y = 0;
-				if(flp & 1) _x = fcen.x * 2;
-				if(flp & 2) _y = fcen.y * 2;
+				var _x = 1 - scl;
+				var _y = 1 - scl;
+				if(flp & 1) _x = (1 + scl);
+				if(flp & 2) _y = (1 + scl);
+				_x *= fcen.x;
+				_y *= fcen.y;
 				if(rad !== undefined) {
 					var __x = rad.cos * _x - rad.sin * _y;
 					var __y = rad.sin * _x + rad.cos * _y;
@@ -1979,6 +1984,7 @@ var stackbox_graph_trans = (function() {
 				di = di.plus(dpos);
 			var rad = this.info['rotate'];
 			var flp = this.info['flipa'];
+			var scl = this.info['scale'];
 			if(rad !== undefined) {
 				rad = {
 					"cos": Math.cos(rad),
@@ -1990,6 +1996,10 @@ var stackbox_graph_trans = (function() {
 			if(flp) {
 				if(flp & 1) _x = -_x;
 				if(flp & 2) _y = -_y;
+			}
+			if(scl !== undefined) {
+				_x *= scl;
+				_y *= scl;
 			}
 			if(rad) {
 				var __x = rad.cos * _x - rad.sin * _y;
@@ -3029,7 +3039,7 @@ function test6() {
 	graph_atom.bind_prop('@pos', pos);
 	graph_atom.init();
 	
-	stackbox_mainloop_system.start_loop();
+	//stackbox_mainloop_system.start_loop();
 	//stackbox_mainloop_system.mainloop();
 	//stackbox_mainloop_system.mainloop();
 	
@@ -3060,7 +3070,9 @@ function test6() {
 	
 	box.draw(frmc, new sbtp.pos(150, 0, 0), 'stand');
 	box.draw(frmc, new sbtp.pos(150, 0, 1), 'stand',
-		new stackbox_graph_trans('flipa:3,flipa-center:200_200,rotate:15d,rotate-center:0_0'));
+		new stackbox_graph_trans('scale:1.2,flipa:3,flipa-center:200_200,rotate:15d,rotate-center:0_0'));
+	/*box.draw(frmc, new sbtp.pos(150, 0, 2), 'stand',
+		new stackbox_graph_trans('scale:1.2'));*/
 	camera.update();
 	
 	return [graph_atom, pos, done];
