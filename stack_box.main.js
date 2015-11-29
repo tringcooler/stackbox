@@ -1872,7 +1872,7 @@ var stackbox_graph_trans = (function() {
 	}
 	stackbox_graph_trans.prototype.parse_str = function(s) {
 		/*
-		rotate(flipa(flip(scale(alpha(P))), Cf), Cr)
+		rotate(flipa(scale(flip(alpha(P)), Cs), Cf), Cr)
 		=> shift(rotate(flipa(scale(flip(alpha(P))))), Ps)
 		*/
 		var ti = s.split(',');
