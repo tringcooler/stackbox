@@ -1873,17 +1873,22 @@ var stackbox_graph_trans = (function() {
 	stackbox_graph_trans.prototype.parse_str = function(s) {
 		/*
 		rotate(flipa(flip(scale(alpha(P))), Cf), Cr)
-		=> shift(rotate(flipa(flip(scale(alpha(P))))), Ps)
+		=> shift(rotate(flipa(scale(flip(alpha(P))))), Ps)
 		*/
 		var ti = s.split(',');
 		var info = {};
 		var rcen = null;
 		var fcen = null;
+		var scen = null;
 		for(var i = 0; i < ti.length; i++) {
 			var kv = ti[i].split(':');
 			var k = kv[0];
 			var v = kv[1];
 			switch(kv[0]) {
+				case 'scale-center':
+					var cpos = v.split('_');
+					var scen = new stackbox_type_position(parseInt(cpos[0]), parseInt(cpos[1]));
+					break;
 				case 'flipa-center':
 					var cpos = v.split('_');
 					var fcen = new stackbox_type_position(parseInt(cpos[0]), parseInt(cpos[1]));
@@ -1902,8 +1907,8 @@ var stackbox_graph_trans = (function() {
 						break;
 					}
 				case 'flipa':
-				case 'flip':
 				case 'scale':
+				case 'flip':
 				case 'alpha':
 					info[k] = parseFloat(v);
 					break;	
@@ -1921,8 +1926,6 @@ var stackbox_graph_trans = (function() {
 				};
 			var flp = info['flipa'];
 			var scl = info['scale'];
-			if(scl === undefined)
-				scl = 1;
 			if(rcen) {
 				if(rad === undefined) throw 'need rotate.';
 				var _x = (1 - rad.cos) * rcen.x + rad.sin * rcen.y;
@@ -1932,13 +1935,28 @@ var stackbox_graph_trans = (function() {
 			}
 			if(fcen) {
 				if(flp === undefined) throw 'need flipa.';
-				var _x = 1 - scl;
-				var _y = 1 - scl;
-				if(flp & 1) _x = (1 + scl);
-				if(flp & 2) _y = (1 + scl);
-				_x *= fcen.x;
-				_y *= fcen.y;
-				if(rad !== undefined) {
+				var _x = 0;
+				var _y = 0;
+				if(flp & 1) _x = 2 * fcen.x;
+				if(flp & 2) _y = 2 * fcen.y;
+				if(rad) {
+					var __x = rad.cos * _x - rad.sin * _y;
+					var __y = rad.sin * _x + rad.cos * _y;
+					_x = __x;
+					_y = __y;
+				}
+				shft.x += _x;
+				shft.y += _y;
+			}
+			if(scen) {
+				if(scl === undefined) throw 'need scale.';
+				var _x = (1 - scl) * scen.x;
+				var _y = (1 - scl) * scen.y;
+				if(flp) {
+					if(flp & 1) _x = -_x;
+					if(flp & 2) _y = -_y;
+				}
+				if(rad) {
 					var __x = rad.cos * _x - rad.sin * _y;
 					var __y = rad.sin * _x + rad.cos * _y;
 					_x = __x;
@@ -1978,8 +1996,8 @@ var stackbox_graph_trans = (function() {
 		rotate:     X            O           + (flip-all *)
 		*/
 		/*
-		shift(rotate(flip(shift(rotate(flipa(flip(scale(P)))), S1 + dPos))), S2)
-		=> shift(rotate(flipa(flip(scale(P)))), S3)
+		shift(rotate(flip(shift(rotate(flipa(scale(flip(P)))), S1 + dPos))), S2)
+		=> shift(rotate(flipa(scale(flip(P)))), S3)
 		*/
 		if(!t) return;
 		var di, si;
@@ -2008,13 +2026,13 @@ var stackbox_graph_trans = (function() {
 			}
 			var _x = di.x;
 			var _y = di.y;
-			if(flp) {
-				if(flp & 1) _x = -_x;
-				if(flp & 2) _y = -_y;
-			}
 			if(scl !== undefined) {
 				_x *= scl;
 				_y *= scl;
+			}
+			if(flp) {
+				if(flp & 1) _x = -_x;
+				if(flp & 2) _y = -_y;
 			}
 			if(rad) {
 				var __x = rad.cos * _x - rad.sin * _y;
@@ -2045,12 +2063,12 @@ var stackbox_graph_trans = (function() {
 			//1:x 2:y
 			this.info['flipa'] = (si ^ di);
 		}
+		if(_chk('scale')) {
+			this.info['scale'] = si * di;
+		}
 		if(_chk('flip')) {
 			//1:x 2:y
 			this.info['flip'] = (si ^ di);
-		}
-		if(_chk('scale')) {
-			this.info['scale'] = si * di;
 		}
 		if(_chk('alpha')) {
 			this.info['alpha'] = si * di;
@@ -2444,15 +2462,15 @@ var stackbox_graph_system = {
 			if(ti & 2) _y = -1;
 			ctx.scale(_x, _y);
 		}
+		if((ti = info['scale']) !== undefined) {
+			ctx.scale(ti, ti);
+		}
 		if((ti = info['flip']) !== undefined) {
 			var _x = 1;
 			var _y = 1;
 			if(ti & 1) _x = -1;
 			if(ti & 2) _y = -1;
 			ctx.scale(_x, _y);
-		}
-		if((ti = info['scale']) !== undefined) {
-			ctx.scale(ti, ti);
 		}
 		if((ti = info['alpha']) !== undefined) {
 			ctx.globalAlpha = ti;
@@ -3088,7 +3106,7 @@ function test6() {
 	
 	box.draw(frmc, new sbtp.pos(150, 0, 0), 'stand');
 	box.draw(frmc, new sbtp.pos(150, 0, 1), 'stand',
-		new stackbox_graph_trans('scale:1.2,flipa:3,flipa-center:200_200,rotate:15d,rotate-center:0_0'));
+		new stackbox_graph_trans('scale:1.2,scale-center:400_400,flipa:3,flipa-center:200_200,rotate:15d,rotate-center:0_0'));
 	/*box.draw(frmc, new sbtp.pos(150, 0, 2), 'stand',
 		new stackbox_graph_trans('scale:1.2'));*/
 	camera.update();
