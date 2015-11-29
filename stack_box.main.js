@@ -104,6 +104,17 @@ var stackbox_type_position = (function() {
 			throw '3d rotate unsupported.';
 		}
 	};
+	stackbox_type_position.prototype.scale = function(scl, cen) {
+		if(this.dim() == 2) {
+			if(cen === undefined)
+				cen = new stackbox_type_position(0, 0);
+			var _x = (this.x - cen.x) * scl + cen.x;
+			var _y = (this.y - cen.y) * scl + cen.y;
+			return new stackbox_type_position(_x, _y);
+		} else {
+			throw '3d rotate unsupported.';
+		}
+	};
 	stackbox_type_position.prototype.rotate = function(rad, cen) {
 		if(this.dim() == 2) {
 			if(cen === undefined)
@@ -300,25 +311,39 @@ var stackbox_type_range = (function() {
 		}
 		return new stackbox_type_range(_top, _bot);
 	};
+	stackbox_type_range.prototype._modrng = function(_r, np) {
+		if(np.x < _r.top.x)
+			_r.top.x = np.x;
+		if(np.y < _r.top.y)
+			_r.top.y = np.y;
+		if(np.x > _r.bot.x)
+			_r.bot.x = np.x;
+		if(np.y > _r.bot.y)
+			_r.bot.y = np.y;
+	};
 	stackbox_type_range.prototype.flip = function(flp, cen) {
 		if(this.dim() == 2) {
 			if(cen === undefined)
 				cen = new stackbox_type_position(0, 0);
 			var _p = this.top.flip(flp, cen);
 			var _r = new stackbox_type_range(_p.x, _p.y, _p.x, _p.y);
-			var _mod = function(np) {
-				if(np.x < _r.top.x)
-					_r.top.x = np.x;
-				if(np.y < _r.top.y)
-					_r.top.y = np.y;
-				if(np.x > _r.bot.x)
-					_r.bot.x = np.x;
-				if(np.y > _r.bot.y)
-					_r.bot.y = np.y;
-			};
-			_mod(this.righttop().flip(flp, cen));
-			_mod(this.leftbot().flip(flp, cen));
-			_mod(this.bot.flip(flp, cen));
+			this._modrng(_r, this.righttop().flip(flp, cen));
+			this._modrng(_r, this.leftbot().flip(flp, cen));
+			this._modrng(_r, this.bot.flip(flp, cen));
+			return _r;
+		} else {
+			throw '3d rotate unsupported.';
+		}
+	};
+	stackbox_type_range.prototype.scale = function(scl, cen) {
+		if(this.dim() == 2) {
+			if(cen === undefined)
+				cen = new stackbox_type_position(0, 0);
+			var _p = this.top.scale(scl, cen);
+			var _r = new stackbox_type_range(_p.x, _p.y, _p.x, _p.y);
+			this._modrng(_r, this.righttop().scale(scl, cen));
+			this._modrng(_r, this.leftbot().scale(scl, cen));
+			this._modrng(_r, this.bot.scale(scl, cen));
 			return _r;
 		} else {
 			throw '3d rotate unsupported.';
@@ -330,19 +355,9 @@ var stackbox_type_range = (function() {
 				cen = new stackbox_type_position(0, 0);
 			var _p = this.top.rotate(rad, cen);
 			var _r = new stackbox_type_range(_p.x, _p.y, _p.x, _p.y);
-			var _mod = function(np) {
-				if(np.x < _r.top.x)
-					_r.top.x = np.x;
-				if(np.y < _r.top.y)
-					_r.top.y = np.y;
-				if(np.x > _r.bot.x)
-					_r.bot.x = np.x;
-				if(np.y > _r.bot.y)
-					_r.bot.y = np.y;
-			};
-			_mod(this.righttop().rotate(rad, cen));
-			_mod(this.leftbot().rotate(rad, cen));
-			_mod(this.bot.rotate(rad, cen));
+			this._modrng(_r, this.righttop().rotate(rad, cen));
+			this._modrng(_r, this.leftbot().rotate(rad, cen));
+			this._modrng(_r, this.bot.rotate(rad, cen));
 			return _r;
 		} else {
 			throw '3d rotate unsupported.';
@@ -2047,8 +2062,11 @@ var stackbox_graph_trans = (function() {
 		return r;
 	};
 	stackbox_graph_trans.prototype.range = function(src_rng) {
-		var flp, rad, shft;
+		var scl, flp, rad, shft;
 		var r_rng = src_rng;
+		if((scl = this.info['scale']) !== undefined) {
+			r_rng = src_rng.scale(scl);
+		}
 		if((flp = this.info['flipa']) !== undefined) {
 			r_rng = src_rng.flip(flp);
 		}
@@ -2987,7 +3005,7 @@ function test6() {
 	var tst_sprt = new stackbox_test_sprite(
 		100, 50, 5, 6, {
 			'idle': [
-				'(0, 0)', 'x+2', 'trans:flip:1,rotate:-85d,rotate-center:0_25', 'x+'
+				'(0, 0)', 'x+2', 'trans:scale:2,flip:1,rotate:-85d,rotate-center:0_25', 'x+'
 			],
 			'walk': [
 				'(0, 1)', 'x+4'
