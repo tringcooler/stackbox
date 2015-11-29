@@ -1590,6 +1590,7 @@ var stackbox_graph_layer = (function() {
 				break;
 		}
 		this.surface = surface;
+		this.trans = null;
 		this.range2local = default_range2local;
 		this.id = layer_id;
 		layer_id ++;
@@ -1605,6 +1606,10 @@ var stackbox_graph_layer = (function() {
 	};
 	stackbox_graph_layer.prototype.blit = function(src_rng, dst_surf, dst_pos, dst_trans, f_clear) {
 		var loc_range = this.range2local(src_rng);
+		if(!dst_trans)
+			dst_trans = this.trans;
+		else if(this.trans != null)
+			dst_trans = dst_trans.plus(this.trans);
 		return this.surface.blit(loc_range, dst_surf, dst_pos, dst_trans, f_clear);
 	};
 	stackbox_graph_layer.prototype.clear = function(info) {
@@ -1624,6 +1629,7 @@ var stackbox_graph_layer_dynamic = (function() {
 	var dl_id = 1;
 	var default_range2local = function(range) {return range;};
 	function stackbox_graph_layer_dynamic() {
+		this.trans = null;
 		this.range2local = default_range2local;
 		this.id = layer_id;
 		layer_id ++;
@@ -1643,6 +1649,10 @@ var stackbox_graph_layer_dynamic = (function() {
 	};
 	stackbox_graph_layer_dynamic.prototype.blit = function(src_rng, dst_surf, dst_pos, dst_trans, f_clear) {
 		var loc_range = this.range2local(src_rng);
+		if(!dst_trans)
+			dst_trans = this.trans;
+		else if(this.trans != null)
+			dst_trans = dst_trans.plus(this.trans);
 		if(f_clear) {
 			var dirty_range;
 			if(dst_trans) {
@@ -3012,7 +3022,17 @@ function test6() {
 	var box = new stackbox_graph_box(6);
 	box.layer_load = function(z, tp, box) {
 		console.log('load layer:', z, tp);
-		return new stackbox_graph_layer_dynamic();
+		var r;
+		if(z == 1) {
+			r = new stackbox_graph_layer(1000,1000);
+			r.trans = new stackbox_graph_trans('scale:0.5');
+			r.range2local = function(range) {
+				return range.scale(2);
+			};
+		} else {
+			r = new stackbox_graph_layer_dynamic();
+		}
+		return r;
 	};
 	box.move_to(0, 'stand');
 	box.set_static_layer('bg', new stackbox_graph_layer());
@@ -3035,7 +3055,7 @@ function test6() {
 	);
 	
 	//stackbox_graph_system.debug_show(tst_sprt.surface.ctx, new sbtp['rng'](0, 0, 600, 500))
-	//stackbox_graph_system.append_ctx(box.get_layer(0).surface.ctx);
+	//stackbox_graph_system.append_ctx(box.get_layer(1).surface.ctx);
 	stackbox_graph_system.debug_split_canvas();
 	
 	var graph_atom = new stackbox_spec_graph(tst_sprt, box, 'stand');
