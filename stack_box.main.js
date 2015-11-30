@@ -569,6 +569,12 @@ var stackbox_dfan_property = (function() {
 	stackbox_dfan_property.prototype.islocked = function(hk) {
 		return this._hooks_lock.check(hk);
 	};
+	stackbox_dfan_property.prototype.lock_turn = function(tn) {
+		if(tn)
+			this._hooks_lock.enable();
+		else
+			this._hooks_lock.disable();
+	};
 	return stackbox_dfan_property;
 })();
 
@@ -1160,13 +1166,15 @@ var stackbox_spec_prop_range = (function(_super) {
 	return stackbox_spec_prop_range;
 })(stackbox_dfan_property);
 
+/*************************************************************************************/
+
 var stackbox_spec_actions = (function(_super) {
 	__extends(stackbox_spec_actions, _super);
 	var need_prop = [
 		'#action',
+		'#done',
 		'%aniframe',
 		'%duration',
-		'@done',
 		'@tick',
 	];
 	function stackbox_spec_actions() {
@@ -1176,6 +1184,7 @@ var stackbox_spec_actions = (function(_super) {
 	stackbox_spec_actions.prototype.init = function() {
 		if(!this.actions_check()) throw 'action uninited';
 		this.bind_prop('#action', new stackbox_spec_prop('__none__'));
+		this.bind_prop('#done', new stackbox_spec_prop(false));
 		this.bind_prop('%aniframe', 0);
 		this.bind_prop('%duration', 0);
 		this.check_props(need_prop);
@@ -1243,7 +1252,7 @@ var stackbox_spec_actions = (function(_super) {
 				if(fi.loop) {
 					this.prop_set('%aniframe', 0);
 				} else {
-					this.prop_input('@done', true);
+					this.prop_set('#done', true);
 					this.goto_state('idle');
 					return;
 				}
@@ -1299,6 +1308,44 @@ var stackbox_spec_graph = (function(_super) {
 	};
 	return stackbox_spec_graph;
 })(stackbox_spec_actions);
+
+/*************************************************************************************/
+
+var stackbox_spec_conductor = (function(_super) {
+	__extends(stackbox_spec_conductor, _super);
+	var need_prop = [
+		'#in',
+	];
+	function stackbox_spec_conductor() {
+		_super.call(this);
+		this.outs = {};
+	}
+	return stackbox_spec_conductor;
+})(stackbox_dfan_automaton);
+
+var stackbox_spec_bone = (function(_super) {
+	__extends(stackbox_spec_bone, _super);
+	var need_prop = [
+		'#rad',
+	];
+	function stackbox_spec_bone() {
+		_super.call(this);
+	}
+	return stackbox_spec_bone;
+})(stackbox_dfan_automaton);
+
+var stackbox_spec_bone_node = (function(_super) {
+	__extends(stackbox_spec_bone_node, _super);
+	var need_prop = [
+		'#pos',
+	];
+	function stackbox_spec_bone_node() {
+		_super.call(this);
+	}
+	return stackbox_spec_bone_node;
+})(stackbox_dfan_automaton);
+
+/*************************************************************************************/
 
 var stackbox_spec_prop_controller = (function(_super) {
 	__extends(stackbox_spec_prop_controller, _super);
@@ -2829,6 +2876,7 @@ function test3() {
 	}
 	var tck = new stackbox_dfan_property(0);
 	sg.bind_prop('@tick', tck);
+	sg.init();
 	
 	var inttest2 = (function(_super) {
 		__extends(inttest2, _super);
@@ -2844,11 +2892,9 @@ function test3() {
 		return inttest2;
 	})(stackbox_dfan_automaton);
 	var dc = new inttest2();
-	dc.bind_prop('#done', new stackbox_dfan_property(false));
+	dc.bind_prop('@done', sg.export_prop('#done'));
 	dc.goto_state('done');
 	
-	sg.bind_prop('@done', dc.export_prop('#done'));
-	sg.init();
 	var act = sg.export_prop('#action');
 	
 	tck.add = function(a) {
@@ -3089,8 +3135,6 @@ function test6() {
 	graph_daemon.goto_state('ready');
 	
 	graph_atom.bind_prop('@tick', stackbox_mainloop_system.otick(2));
-	var done = new stackbox_dfan_property(false);
-	graph_atom.bind_prop('@done', done);
 	var pos = new stackbox_spec_prop_pos(new sbtp['pos'](100, 100, 1));
 	graph_atom.bind_prop('@pos', pos);
 	graph_atom.init();
@@ -3131,7 +3175,7 @@ function test6() {
 		new stackbox_graph_trans('scale:1.2'));*/
 	camera.update();
 	
-	return [graph_atom, pos, done];
+	return [graph_atom, pos];
 }
 
 function test7() {
@@ -3171,6 +3215,65 @@ function test7() {
 	var p1 = calc1(new sbtp.pos(100,50), -Math.PI/2, new sbtp.pos(0,25), 35*Math.PI/180, new sbtp.pos(100,25));
 	var p2 = calc2(new sbtp.pos(100,50), Math.PI*3/2, new sbtp.pos(0,25), 35*Math.PI/180, new sbtp.pos(100,25));
 	console.log('x:', p1.x, p2.x, 'y:', p1.y, p2.y);
+}
+
+function test8() {
+	var inttest = (function(_super) {
+		__extends(inttest, _super);
+		function inttest() {
+			_super.call(this);
+		}
+		inttest.prototype.state_any = function(info) {
+			console.log('trigged',
+				info.name, info.trigger, info.val, info.old_val);
+			info.prop.lock_turn(false);
+			if(info.val > 0)
+				this.prop_set(info.name, info.val-1);
+			info.prop.lock_turn(true);
+			console.log(info.name, this.prop_get(info.name));
+			this.goto_state('any');
+		};
+		return inttest;
+	})(stackbox_dfan_automaton);
+	var tg1 = new inttest();
+	tg1.bind_prop('#val', new stackbox_dfan_property(0));
+	tg1.goto_state('any');
+	tg1.prop_set('#val', 3);
+	tg1.prop_set('#val', 10);
+	
+	console.log('==============');
+	
+	var inttest = (function(_super) {
+		__extends(inttest, _super);
+		function inttest() {
+			_super.call(this);
+		}
+		inttest.prototype.state_idle = function(info) {
+			this.goto_state('ready');
+			this.state_ready(info);
+		};
+		inttest.prototype.statrig_ready = [];
+		inttest.prototype.state_ready = function(info) {
+			console.log('trigged',
+				info.name, info.trigger, info.val, info.old_val);
+			this.prop_set('#val1', info.val+1);
+			this.prop_set('#val2', info.val+1);
+			this.prop_set('#val3', info.val+1);
+			this.goto_state('idle');
+		};
+		return inttest;
+	})(stackbox_dfan_automaton);
+	var tg1 = new inttest();
+	tg1.bind_prop('#val1', new stackbox_dfan_property(0));
+	tg1.bind_prop('#val2', new stackbox_dfan_property(0));
+	tg1.bind_prop('#val3', new stackbox_dfan_property(0));
+	tg1.goto_state('idle');
+	tg1.prop_set('#val1', 3);
+	console.log(tg1.prop_get('#val1'), tg1.prop_get('#val2'), tg1.prop_get('#val3'));
+	tg1.prop_set('#val1', 10);
+	console.log(tg1.prop_get('#val1'), tg1.prop_get('#val2'), tg1.prop_get('#val3'));
+	
+	return tg1;
 }
 
 $(document).ready(function() {
