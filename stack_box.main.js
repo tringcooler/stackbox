@@ -501,8 +501,13 @@ var stackbox_dfan_lock_simple = (function() {
 	stackbox_dfan_lock_simple.prototype.disable = function() {
 		this._disable = true;
 	};
+	stackbox_dfan_lock_simple.prototype.bypass = function(n) {
+		if(!(n >= 0)) n = 0;
+		this._bypass = n;
+	};
 	stackbox_dfan_lock_simple.prototype.check = function(hk) {
-		return (!!this._lock) && (!this._disable);
+		return (!!this._lock) && (!this._disable) 
+			&& ((!this._bypass) || (!this._bypass--));
 	};
 	return stackbox_dfan_lock_simple;
 })();
@@ -574,6 +579,13 @@ var stackbox_dfan_property = (function() {
 			this._hooks_lock.enable();
 		else
 			this._hooks_lock.disable();
+	};
+	stackbox_dfan_property.prototype.lock_bypass = function(n) {
+		if(n === undefined) n = 1;
+		this._hooks_lock.bypass(n);
+	};
+	stackbox_dfan_property.prototype.lock_bypass_safedone = function() {
+		this._hooks_lock.bypass(0);
 	};
 	return stackbox_dfan_property;
 })();
@@ -977,6 +989,14 @@ var stackbox_dfan_automaton = (function() {
 		return this._props_info[name].prop.islocked(trig);
 	};
 	/* perf_importance: more */
+	stackbox_dfan_automaton.prototype.prop_lock_bypass = function(name, n) {
+		return this._props_info[name].prop.lock_bypass(n);
+	};
+	/* perf_importance: more */
+	stackbox_dfan_automaton.prototype.prop_lock_bypass_safedone = function(name) {
+		return this._props_info[name].prop.lock_bypass_safedone();
+	};
+	/* perf_importance: more */
 	stackbox_dfan_automaton.prototype.prop_get = function(name) {
 		if(name[0] == SYM_BYPS) return this._props_info[name].prop;
 		return this._props_info[name].prop.get();
@@ -1311,42 +1331,6 @@ var stackbox_spec_graph = (function(_super) {
 
 /*************************************************************************************/
 
-var stackbox_spec_conductor = (function(_super) {
-	__extends(stackbox_spec_conductor, _super);
-	var need_prop = [
-		'#in',
-	];
-	function stackbox_spec_conductor() {
-		_super.call(this);
-		this.outs = {};
-	}
-	return stackbox_spec_conductor;
-})(stackbox_dfan_automaton);
-
-var stackbox_spec_bone = (function(_super) {
-	__extends(stackbox_spec_bone, _super);
-	var need_prop = [
-		'#rad',
-	];
-	function stackbox_spec_bone() {
-		_super.call(this);
-	}
-	return stackbox_spec_bone;
-})(stackbox_dfan_automaton);
-
-var stackbox_spec_bone_node = (function(_super) {
-	__extends(stackbox_spec_bone_node, _super);
-	var need_prop = [
-		'#pos',
-	];
-	function stackbox_spec_bone_node() {
-		_super.call(this);
-	}
-	return stackbox_spec_bone_node;
-})(stackbox_dfan_automaton);
-
-/*************************************************************************************/
-
 var stackbox_spec_prop_controller = (function(_super) {
 	__extends(stackbox_spec_prop_controller, _super);
 	var ctrl_eq = function(a, b) {
@@ -1456,6 +1440,42 @@ var stackbox_spec_control = (function(_super) {
 		}
 	};
 	return stackbox_spec_control;
+})(stackbox_dfan_automaton);
+
+/*************************************************************************************/
+
+var stackbox_spec_conductor = (function(_super) {
+	__extends(stackbox_spec_conductor, _super);
+	var need_prop = [
+		'#in',
+	];
+	function stackbox_spec_conductor() {
+		_super.call(this);
+		this.outs = {};
+	}
+	return stackbox_spec_conductor;
+})(stackbox_dfan_automaton);
+
+var stackbox_spec_bone = (function(_super) {
+	__extends(stackbox_spec_bone, _super);
+	var need_prop = [
+		'#rad',
+	];
+	function stackbox_spec_bone() {
+		_super.call(this);
+	}
+	return stackbox_spec_bone;
+})(stackbox_dfan_automaton);
+
+var stackbox_spec_bone_node = (function(_super) {
+	__extends(stackbox_spec_bone_node, _super);
+	var need_prop = [
+		'#pos',
+	];
+	function stackbox_spec_bone_node() {
+		_super.call(this);
+	}
+	return stackbox_spec_bone_node;
 })(stackbox_dfan_automaton);
 
 var stackbox_spec_order_triggers = (function(_super) {
@@ -3272,6 +3292,33 @@ function test8() {
 	console.log(tg1.prop_get('#val1'), tg1.prop_get('#val2'), tg1.prop_get('#val3'));
 	tg1.prop_set('#val1', 10);
 	console.log(tg1.prop_get('#val1'), tg1.prop_get('#val2'), tg1.prop_get('#val3'));
+	
+	console.log('==============');
+	
+	var inttest = (function(_super) {
+		__extends(inttest, _super);
+		function inttest() {
+			_super.call(this);
+		}
+		inttest.prototype.state_any = function(info) {
+			console.log('trigged',
+				info.name, info.trigger, info.val, info.old_val);
+			if(info.val == 10)
+				//info.prop.lock_bypass(3);
+				this.prop_lock_bypass(info.name, 3);
+			//this.prop_lock_bypass(info.name);
+			this.prop_set(info.name, info.val-1);
+			//info.prop.lock_bypass_safedone();
+			this.prop_lock_bypass_safedone(info.name);
+			this.goto_state('any');
+		};
+		return inttest;
+	})(stackbox_dfan_automaton);
+	var tg1 = new inttest();
+	tg1.bind_prop('#val', new stackbox_dfan_property(0));
+	tg1.goto_state('any');
+	tg1.prop_set('#val', 3);
+	tg1.prop_set('#val', 10);
 	
 	return tg1;
 }
