@@ -1329,6 +1329,28 @@ var stackbox_spec_graph = (function(_super) {
 	return stackbox_spec_graph;
 })(stackbox_spec_actions);
 
+var stackbox_spec_bone = (function(_super) {
+	__extends(stackbox_spec_bone, _super);
+	var need_prop = [
+		'#rad',
+	];
+	function stackbox_spec_bone() {
+		_super.call(this);
+	}
+	return stackbox_spec_bone;
+})(stackbox_dfan_automaton);
+
+var stackbox_spec_bone_node = (function(_super) {
+	__extends(stackbox_spec_bone_node, _super);
+	var need_prop = [
+		'#pos',
+	];
+	function stackbox_spec_bone_node() {
+		_super.call(this);
+	}
+	return stackbox_spec_bone_node;
+})(stackbox_dfan_automaton);
+
 /*************************************************************************************/
 
 var stackbox_spec_prop_controller = (function(_super) {
@@ -1446,6 +1468,8 @@ var stackbox_spec_control = (function(_super) {
 
 var stackbox_spec_conductor = (function(_super) {
 	__extends(stackbox_spec_conductor, _super);
+	var SYM_PSH = '<';
+	var SYM_POP = '>';
 	var need_prop = [
 		'#in',
 	];
@@ -1453,29 +1477,30 @@ var stackbox_spec_conductor = (function(_super) {
 		_super.call(this);
 		this.outs = {};
 	}
+	stackbox_spec_conductor.prototype.init = function() {
+		
+	};
+	stackbox_spec_conductor.prototype._parse = function(que) {
+		var itm = que.shift();
+		if(itm == SYM_PSH) {
+			var nxt = this._parse(que);
+			if(nxt && nxt.length > 0)
+				return this._parse(nxt);
+		} else {
+			if(que.length < 2) {
+				this.outs[itm].set(que[0]);
+			} else if(que[1] == SYM_POP) {
+				
+			} else {
+				this.outs[itm].set(que);
+			}
+		}
+	};
+	stackbox_spec_conductor.prototype.statrig_ready = ['#in'];
+	stackbox_spec_conductor.prototype.state_ready = function(info) {
+		
+	};
 	return stackbox_spec_conductor;
-})(stackbox_dfan_automaton);
-
-var stackbox_spec_bone = (function(_super) {
-	__extends(stackbox_spec_bone, _super);
-	var need_prop = [
-		'#rad',
-	];
-	function stackbox_spec_bone() {
-		_super.call(this);
-	}
-	return stackbox_spec_bone;
-})(stackbox_dfan_automaton);
-
-var stackbox_spec_bone_node = (function(_super) {
-	__extends(stackbox_spec_bone_node, _super);
-	var need_prop = [
-		'#pos',
-	];
-	function stackbox_spec_bone_node() {
-		_super.call(this);
-	}
-	return stackbox_spec_bone_node;
 })(stackbox_dfan_automaton);
 
 var stackbox_spec_order_triggers = (function(_super) {
