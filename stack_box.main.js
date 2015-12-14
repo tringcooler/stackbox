@@ -1167,12 +1167,14 @@ var stackbox_dfan_automaton_multithread = (function(_super) {
 			state = '__mt_root__'
 		this._state = state;
 	};
-	stackbox_dfan_automaton_multithread.prototype.goto_state = function(state) {
+	stackbox_dfan_automaton_multithread.prototype.goto_state = function(state, tid) {
 		if(this._cur_tid === null)
 			this.new_thread();
 		if(this._state === null)
 			this.root_state();
-		this._thread_state[this._cur_tid] = state;
+		if(tid === undefined)
+			tid = this._cur_tid
+		this._thread_state[tid] = state;
 		//console.log('goto', state);
 	};
 	stackbox_dfan_automaton_multithread.prototype.from_state = function(state) {
@@ -1689,7 +1691,7 @@ var stackbox_spec_serial_protocol = (function(_super) {
 		if(tid === null) throw 'should base on mulport protocol.';
 		if(!this.exist_thread(tid)) {
 			this.new_thread(tid);
-			this.goto_state('idle');
+			this.goto_state('idle', tid);
 		}
 		this.switch_thread(info, tid);
 	};
@@ -1745,7 +1747,7 @@ var stackbox_spec_serial_proto_mulport = (function(_super) {
 		if(tid === undefined) {
 			tid = this.new_thread();
 			this.port_thread_map[port] = tid;
-			this.goto_state('idle');
+			this.goto_state('idle', tid);
 		}
 		this.switch_thread(info, tid);
 	};
@@ -3716,11 +3718,12 @@ function test10() {
 		return tstproto2;
 	})(tstproto);
 	
-	var ib = new stackbox_spec_serial_bus('');
+	var ib1 = new stackbox_spec_serial_bus('');
+	var ib2 = new stackbox_spec_serial_bus('');
 	
 	var nd = new stackbox_spec_serial_node();
-	nd.add_port('aaaa', ib);
-	nd.add_port('bbbb');
+	nd.add_port('aaaa', ib1);
+	nd.add_port('bbbb', ib2);
 	nd.add_port('cccc');
 	nd.add_port('dddd');
 	nd.add_port('abcd');
@@ -3738,16 +3741,22 @@ function test10() {
 	t2p.bind_next_none();
 	t2p.init();
 	
-	ib.set('aaaaa');
-	ib.set('tstp');
-	ib.set('a');
-	ib.set('b');
-	ib.set('tstp2');
-	ib.set('c');
-	ib.set('d');
-	ib.set('123');
+	ib1.set('aaaaa');
+	ib1.set('tstp');
+	ib1.set('a');
+	ib2.set('tstp');
+	ib1.set('b');
+	ib2.set('d');
+	ib1.set('tstp2');
+	ib2.set('d');
+	ib2.set('tstp2');
+	ib1.set('c');
+	ib2.set('d');
+	ib2.set('d');
+	ib2.set('456');
+	ib1.set('d');
+	ib1.set('123');
 	
-	return ib;
 }
 
 $(document).ready(function() {
