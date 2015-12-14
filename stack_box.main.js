@@ -776,9 +776,13 @@ var stackbox_dfan_automaton = (function() {
 		return lvl;
 	};
 	/* perf_importance: much n */
+	stackbox_dfan_automaton.prototype.default_trigger = function() {
+		return Object.keys(this._props_info);
+	};
+	/* perf_importance: much n */
 	stackbox_dfan_automaton.prototype._record_trig = function(rec, trig, func) {
 		if(trig === undefined)
-			trig = Object.keys(this._props_info);
+			trig = this.default_trigger();
 		rec.tidx = rec.trig.length;
 		rec.trig.push([trig, func]);
 	};
@@ -821,6 +825,9 @@ var stackbox_dfan_automaton = (function() {
 			//for(var st in rec.cond) {
 			for(var sti = 0, stl = Object.keys(rec.cond), st;
 				st = stl[sti], sti < stl.length; sti++) {
+				/* state named "__xxxx" exclude with cond all */
+				if(st.length > 2 && st[0] == '_' && st[1] == '_')
+					continue;
 				if(/*!in*/rec.cond_ex[st] === undefined 
 					|| rec.cond_ex[st][c_i] === undefined) {
 					this._record_cond(rec, st, c_t[1], c_t[2], c_t[3], c_t[4], c_t[5], c_i);
@@ -997,6 +1004,10 @@ var stackbox_dfan_automaton = (function() {
 		return this._props_info[name].prop.lock_bypass_safedone();
 	};
 	/* perf_importance: more */
+	stackbox_dfan_automaton.prototype.prop_exist = function(name) {
+		return !(this._props_info[name] === undefined);
+	};
+	/* perf_importance: more */
 	stackbox_dfan_automaton.prototype.prop_get = function(name) {
 		if(name[0] == SYM_BYPS) return this._props_info[name].prop;
 		return this._props_info[name].prop.get();
@@ -1082,6 +1093,96 @@ var stackbox_dfan_automaton = (function() {
 	};
 	return stackbox_dfan_automaton;
 })();
+
+var stackbox_dfan_automaton_multithread = (function(_super) {
+	__extends(stackbox_dfan_automaton_multithread, _super);
+	function stackbox_dfan_automaton_multithread() {
+		_super.call(this);
+		this._last_tid = 1;
+		this._cur_tid = null;
+		this._thread_state = {};
+		this._thread_local = {};
+	}
+	stackbox_dfan_automaton_multithread.prototype.new_thread = function(tid) {
+		if(tid === undefined) {
+			tid = this._last_tid++;
+		} else {
+			if(this._thread_state[tid] !== undefined)
+				throw 'tid used.';
+			if(this._last_tid < tid + 1)
+				this._last_tid = tid + 1;
+		}
+		this._thread_state[tid] = null;
+		this._thread_local[tid] = {};
+		if(this._cur_tid === null)
+			this._cur_tid = tid;
+		console.log('new_thread', tid);
+		return tid;
+	};
+	stackbox_dfan_automaton_multithread.prototype.exist_thread = function(tid) {
+		return this._thread_state[tid] !== undefined;
+	};
+	stackbox_dfan_automaton_multithread.prototype.current_thread = function() {
+		return this._cur_tid;
+	};
+	stackbox_dfan_automaton_multithread.prototype.del_thread = function(tid) {
+		if(!this.exist_thread(tid)) return false;
+		if(tid == this._cur_tid) this._cur_tid = null;
+		console.log('del_thread', tid);
+		return (delete this._thread_state[tid]) && (delete this._thread_local[tid]);
+	};
+	stackbox_dfan_automaton_multithread.prototype.done_thread = function() {
+		this.del_thread(this._cur_tid);
+	};
+	stackbox_dfan_automaton_multithread.prototype.switch_thread = function(info, tid) {
+		if(tid === undefined)
+			tid = this._cur_tid;
+		else
+			this._cur_tid = tid;
+		var thread_state = this._thread_state[tid];
+		if(thread_state === undefined) return;
+		var name = info.name;
+		var trigger = info.trigger;
+		if(/*!in*/this._props_info[name].triggers[thread_state] === undefined
+			|| /*!in*/this._props_info[name].triggers[thread_state][trigger] === undefined) return;
+		var _ts = this._props_info[name].triggers[thread_state][trigger];
+		if(_ts) {
+			var r = null;
+			for(var i = 0; i < _ts.length; i++) {
+				r = _ts[i].call(this, info);
+			}
+			return r;
+		}
+	};
+	stackbox_dfan_automaton_multithread.prototype.local_get = function(name) {
+		return this._thread_local[this._cur_tid][name];
+	};
+	stackbox_dfan_automaton_multithread.prototype.local_set = function(name, val) {
+		this._thread_local[this._cur_tid][name] = val;
+	};
+	stackbox_dfan_automaton_multithread.prototype.root_state = function(state) {
+		if(this._state === null)
+			this._init_triggers();
+		if(state === undefined)
+			state = '__mt_root__'
+		this._state = state;
+	};
+	stackbox_dfan_automaton_multithread.prototype.goto_state = function(state) {
+		if(this._cur_tid === null)
+			this.new_thread();
+		if(this._state === null)
+			this.root_state();
+		this._thread_state[this._cur_tid] = state;
+		//console.log('goto', state);
+	};
+	stackbox_dfan_automaton_multithread.prototype.from_state = function(state) {
+		return this._thread_state[this._cur_tid] == state;
+	};
+	stackbox_dfan_automaton_multithread.prototype.state___mt_root__ = function(info) {
+		this.switch_thread(info);
+	};
+	return stackbox_dfan_automaton_multithread;
+})(stackbox_dfan_automaton);
 
 /***********************************SPECS**********************************************/
 
@@ -1466,42 +1567,209 @@ var stackbox_spec_control = (function(_super) {
 
 /*************************************************************************************/
 
-var stackbox_spec_conductor = (function(_super) {
-	__extends(stackbox_spec_conductor, _super);
-	var SYM_PSH = '<';
-	var SYM_POP = '>';
+var stackbox_spec_serial_bus = stackbox_dfan_property;
+
+var stackbox_spec_serial_node = (function(_super) {
+	__extends(stackbox_spec_serial_node, _super);
 	var need_prop = [
-		'#in',
+		'#proto_in',
+		'#proto_out',
 	];
-	function stackbox_spec_conductor() {
+	function stackbox_spec_serial_node(id) {
 		_super.call(this);
-		this.outs = {};
+		this.id = id;
+		this.ports = [];
 	}
-	stackbox_spec_conductor.prototype.init = function() {
-		
+	stackbox_spec_serial_node.prototype.handled_trigger = ["set"];
+	stackbox_spec_serial_node.prototype.init = function() {
+		this.bind_prop('#proto_in', new stackbox_spec_serial_bus([]));
+		this.bind_prop('#proto_out', new stackbox_spec_serial_bus([]));
+		this.statrig_ready = this.ports;
+		this.check_props(need_prop);
+		this.goto_state('ready');
+		this._started = true;
 	};
-	stackbox_spec_conductor.prototype._parse = function(que) {
-		var itm = que.shift();
-		if(itm == SYM_PSH) {
-			var nxt = this._parse(que);
-			if(nxt && nxt.length > 0)
-				return this._parse(nxt);
+	stackbox_spec_serial_node.prototype.add_port = function(name, bus) {
+		if(this._started) throw 'node is already working.'
+		if(bus === undefined)
+			bus = new stackbox_spec_serial_bus('');
+		this.bind_prop(name, bus);
+		this.ports.push(name);
+	};
+	stackbox_spec_serial_node.prototype.proto_in = function() {
+		return this.export_prop('#proto_in');
+	};
+	stackbox_spec_serial_node.prototype.proto_out = function() {
+		return this.export_prop('#proto_out');
+	};
+	stackbox_spec_serial_node.prototype.state_ready = function(info) {
+		this.prop_set('#proto_in', [info.name, info.val]);
+	};
+	stackbox_spec_serial_node.prototype.inttrig_output = ['#proto_out'];
+	stackbox_spec_serial_node.prototype.interrupt_output = function(info) {
+		if(this.prop_exist(info.val[0])) {
+			console.log('port output', info.val[0], info.val[1]);
+			this.prop_set(info.val[0], info.val[1]);
 		} else {
-			if(que.length < 2) {
-				this.outs[itm].set(que[0]);
-			} else if(que[1] == SYM_POP) {
-				
-			} else {
-				this.outs[itm].set(que);
-			}
+			throw 'unknown port: ' + info.val[0];
 		}
 	};
-	stackbox_spec_conductor.prototype.statrig_ready = ['#in'];
-	stackbox_spec_conductor.prototype.state_ready = function(info) {
-		
-	};
-	return stackbox_spec_conductor;
+	return stackbox_spec_serial_node;
 })(stackbox_dfan_automaton);
+
+var stackbox_spec_serial_protocol = (function(_super) {
+	__extends(stackbox_spec_serial_protocol, _super);
+	var need_prop = [
+		'@proto_in',
+		'@proto_back',
+		'#proto_return',
+		'#proto_out',
+	];
+	function stackbox_spec_serial_protocol() {
+		_super.call(this);
+		this.bind_prop('#proto_out', new stackbox_spec_serial_bus([]));
+		this.bind_prop('#proto_return', new stackbox_spec_serial_bus([]));
+	}
+	stackbox_spec_serial_protocol.prototype.proto_name = "base";
+	stackbox_spec_serial_protocol.prototype.handled_trigger = ["set"];
+	stackbox_spec_serial_protocol.prototype.default_trigger = function() {
+		return ['@proto_in'];
+	};
+	stackbox_spec_serial_protocol.prototype.init = function() {
+		this.check_props(need_prop);
+		this.root_state('main');
+	};
+	stackbox_spec_serial_protocol.prototype.data_in = function(info) {
+		var dat = info.val;
+		var val = dat[dat.length - 1];
+		var context = dat.slice(0, -1);
+		return {
+			"val": val,
+			"context": context,
+		};
+	};
+	stackbox_spec_serial_protocol.prototype.data_in_v = function(info) {
+		return info.val[info.val.length - 1];
+	};
+	stackbox_spec_serial_protocol.prototype.data_out = function(dat) {
+		this.prop_set('#proto_out', dat.context.concat(dat.val));
+	};
+	stackbox_spec_serial_protocol.prototype.data_return = function(dat) {
+		this.prop_set('#proto_return', dat.context.concat(dat.val));
+	};
+	stackbox_spec_serial_protocol.prototype.output = function(port, val) {
+		if(this.prop_exist('@port_out'))
+			this.prop_input('@port_out', [port, val]);
+	};
+	stackbox_spec_serial_protocol.prototype.bind_in = function(bus) {
+		this.bind_prop('@proto_in', bus);
+	};
+	stackbox_spec_serial_protocol.prototype.bind_next = function(prtcl) {
+		prtcl.bind_prop('@proto_in', this.export_prop('#proto_out'));
+		this.bind_prop('@proto_back', prtcl.export_prop('#proto_return'));
+	};
+	stackbox_spec_serial_protocol.prototype.bind_next_none = function() {
+		this.bind_prop('@proto_back', this.export_prop('#proto_out'));
+	};
+	stackbox_spec_serial_protocol.prototype.bind_ports = function(bus) {
+		this.bind_prop('@port_out', bus);
+	};
+	stackbox_spec_serial_protocol.prototype.get_context = function(dat, deep) {
+		if(deep < 0)
+			deep = dat.context.length + deep;
+		if(deep < 0 || deep >= dat.context.length)
+			return null;
+		return dat.context[deep];
+	};
+	/* Base on mulport protocol */
+	var CONTEXT_DEEP_TID = -2;
+	stackbox_spec_serial_protocol.prototype.state_main$f = function(info) {
+		var dat = this.data_in(info);
+		var tid = this.get_context(dat, CONTEXT_DEEP_TID);
+		if(tid === null) throw 'should base on mulport protocol.';
+		if(!this.exist_thread(tid)) {
+			this.new_thread(tid);
+			this.goto_state('idle');
+		}
+		this.switch_thread(info, tid);
+	};
+	stackbox_spec_serial_protocol.prototype.statrig_main$f$vret = ['@proto_back'];
+	stackbox_spec_serial_protocol.prototype.state_main$f$vret = function(info) {
+		var dat = this.data_in(info);
+		var tid = this.get_context(dat, CONTEXT_DEEP_TID);
+		if(tid === null) throw 'should base on mulport protocol.';
+		this.switch_thread(info, tid);
+	};
+	stackbox_spec_serial_protocol.prototype.state_transdata$f = function(info) {
+		var dat = this.data_in(info);
+		var context = this.local_get('context_out');
+		if(context === undefined) {
+			this.prop_set('#proto_out', info.val);
+		} else {
+			dat.context = context;
+			this.data_out(dat);
+		}
+		if(this.current_thread() !== null)
+			this.goto_state('transdata');
+	};
+	stackbox_spec_serial_protocol.prototype.statrig_transdata$f$vret = ['@proto_back'];
+	stackbox_spec_serial_protocol.prototype.state_transdata$f$vret = function(info) {
+		var dat = this.data_in(info);
+		if(dat.val == 'done') {
+			var context = this.local_get('context_ret');
+			if(context === undefined) {
+				this.prop_set('#proto_return', info.val);
+			} else {
+				dat.context = context;
+				this.data_return(dat);
+			}
+			this.done_thread();
+		}
+	};
+	return stackbox_spec_serial_protocol;
+})(stackbox_dfan_automaton_multithread);
+
+var stackbox_spec_serial_proto_mulport = (function(_super) {
+	__extends(stackbox_spec_serial_proto_mulport, _super);
+	function stackbox_spec_serial_proto_mulport() {
+		_super.call(this);
+		this.port_thread_map = {};
+	}
+	stackbox_spec_serial_proto_mulport.prototype.proto_name = "mulport";
+	var CONTEXT_DEEP_PORT = -1;
+	var CONTEXT_DEEP_TID = -2;
+	stackbox_spec_serial_proto_mulport.prototype.state_main$f = function(info) {
+		var dat = this.data_in(info);
+		var port = this.get_context(dat, CONTEXT_DEEP_PORT);
+		var tid = this.port_thread_map[port];
+		if(tid === undefined) {
+			tid = this.new_thread();
+			this.port_thread_map[port] = tid;
+			this.goto_state('idle');
+		}
+		this.switch_thread(info, tid);
+	};
+	stackbox_spec_serial_proto_mulport.prototype.state_idle = function(info) {
+		var dat = this.data_in(info);
+		dat.context.unshift(this.current_thread());
+		this.local_set('context_out', dat.context);
+		this.state_transdata$f(info);
+	}
+	stackbox_spec_serial_proto_mulport.prototype.state_transdata$f$vret = function(info) {
+		var dat = this.data_in(info);
+		if(dat.val == 'done') {
+			var port = this.get_context(dat, CONTEXT_DEEP_PORT);
+			var tid = this.get_context(dat, CONTEXT_DEEP_TID);
+			if(this.port_thread_map[port] !== tid)
+				throw 'invalid port tid.';
+			delete this.port_thread_map[port];
+			this.done_thread();
+		}
+	};
+	return stackbox_spec_serial_proto_mulport;
+})(stackbox_spec_serial_protocol);
+
+/*************************************************************************************/
 
 var stackbox_spec_order_triggers = (function(_super) {
 	__extends(stackbox_spec_order_triggers, _super);
@@ -3346,6 +3614,140 @@ function test8() {
 	tg1.prop_set('#val', 10);
 	
 	return tg1;
+}
+
+function test9() {
+	var mttest = (function(_super) {
+		__extends(mttest, _super);
+		function mttest() {
+			_super.call(this);
+		}
+		mttest.prototype.state_any = function(info) {
+			console.log('any', info);
+			this.goto_state('any');
+		};
+		mttest.prototype.statrig___mmm$f = ['#val1'];
+		mttest.prototype.state___mmm$f = function(info) {
+			console.log('mmm1', info);
+			this.goto_state('any');
+		};
+		mttest.prototype.statrig___mmm$f$v2 = ['#val2'];
+		mttest.prototype.state___mmm$f$v2 = function(info) {
+			console.log('mmm2', info);
+			this.goto_state('any');
+		};
+		mttest.prototype.interrupt_intr = function(info) {
+			console.log('intr', info);
+			this.goto_state('__mmm');
+		};
+		return mttest;
+	})(stackbox_dfan_automaton_multithread);
+	var mt = new mttest();
+	var v1 = new stackbox_dfan_property(0);
+	var v2 = new stackbox_dfan_property(0);
+	mt.bind_prop('#val1', v1);
+	mt.bind_prop('#val2', v2);
+	mt.goto_state('any');
+	v1.set(123);
+	v1.set(456);
+	v1.set(789);
+	console.log('=========');
+	v2.set(123);
+	v2.set(456);
+	v2.set(789);
+	return mt;
+}
+
+function test10() {
+	
+	var tstproto = new (function(_super) {
+		__extends(tstproto, _super);
+		function tstproto() {
+			_super.call(this);
+		}
+		tstproto.prototype.proto_name = "tstp";
+		tstproto.prototype.state_idle = function(info) {
+			if(this.data_in_v(info) == this.proto_name) {
+				console.log('proto_token', this.proto_name);
+				this.goto_state('s1');
+			} else {
+				this.done_thread();
+			}
+		};
+		tstproto.prototype.state_s1 = function(info) {
+			var dat = this.data_in(info);
+			console.log('s1', dat.val);
+			this.local_set('port_str', dat.val);
+			this.goto_state('s2');
+		};
+		tstproto.prototype.state_s2 = function(info) {
+			var dat = this.data_in(info);
+			console.log('s2', dat.val);
+			var ps = this.local_get('port_str') + dat.val;
+			dat.context.unshift(ps);
+			this.local_set('context_out', dat.context);
+			this.goto_state('transdata');
+		};
+		return tstproto;
+	})(stackbox_spec_serial_protocol);
+	
+	var tstproto2 = new (function(_super) {
+		__extends(tstproto2, _super);
+		function tstproto2() {
+			_super.call(this);
+		}
+		tstproto2.prototype.proto_name = "tstp2";
+		tstproto2.prototype.state_s2 = function(info) {
+			var dat = this.data_in(info);
+			console.log('s2', dat.val);
+			var ps = this.get_context(dat, 0) + this.local_get('port_str') + dat.val;
+			this.local_set('port_str_all', ps);
+			this.goto_state('last');
+		};
+		tstproto2.prototype.state_last = function(info) {
+			var dat = this.data_in(info);
+			var port = this.local_get('port_str_all');
+			console.log('last', port, dat.val);
+			this.output(port, dat.val);
+			dat.val = 'done';
+			this.data_return(dat);
+			this.done_thread();
+		};
+		return tstproto2;
+	})(tstproto);
+	
+	var ib = new stackbox_spec_serial_bus('');
+	
+	var nd = new stackbox_spec_serial_node();
+	nd.add_port('aaaa', ib);
+	nd.add_port('bbbb');
+	nd.add_port('cccc');
+	nd.add_port('dddd');
+	nd.add_port('abcd');
+	nd.init();
+	
+	var mp = new stackbox_spec_serial_proto_mulport();
+	mp.bind_in(nd.proto_in());
+	var t1p = new tstproto();
+	mp.bind_next(t1p);
+	mp.init();
+	var t2p = new tstproto2();
+	t1p.bind_next(t2p);
+	t1p.init();
+	t2p.bind_ports(nd.proto_out());
+	t2p.bind_next_none();
+	t2p.init();
+	
+	ib.set('aaaaa');
+	ib.set('tstp');
+	ib.set('a');
+	ib.set('b');
+	ib.set('tstp2');
+	ib.set('c');
+	ib.set('d');
+	ib.set('123');
+	
+	return ib;
 }
 
 $(document).ready(function() {
