@@ -1683,9 +1683,20 @@ var stackbox_spec_serial_protocol = (function(_super) {
 			return null;
 		return dat.context[deep];
 	};
+	/* TODO */
+	stackbox_spec_serial_protocol.prototype.state_main$f = function(info) {};
+	return stackbox_spec_serial_protocol;
+})(stackbox_dfan_automaton_multithread);
+
+var stackbox_spec_serial_proto_baseup = (function(_super) {
+	__extends(stackbox_spec_serial_proto_baseup, _super);
+	function stackbox_spec_serial_proto_baseup() {
+		_super.call(this);
+	}
+	stackbox_spec_serial_proto_baseup.prototype.proto_name = "baseup";
 	/* Base on mulport protocol */
 	var CONTEXT_DEEP_TID = -2;
-	stackbox_spec_serial_protocol.prototype.state_main$f = function(info) {
+	stackbox_spec_serial_proto_baseup.prototype.state_main$f = function(info) {
 		var dat = this.data_in(info);
 		var tid = this.get_context(dat, CONTEXT_DEEP_TID);
 		if(tid === null) throw 'should base on mulport protocol.';
@@ -1695,14 +1706,14 @@ var stackbox_spec_serial_protocol = (function(_super) {
 		}
 		this.switch_thread(info, tid);
 	};
-	stackbox_spec_serial_protocol.prototype.statrig_main$f$vret = ['@proto_back'];
-	stackbox_spec_serial_protocol.prototype.state_main$f$vret = function(info) {
+	stackbox_spec_serial_proto_baseup.prototype.statrig_main$f$vret = ['@proto_back'];
+	stackbox_spec_serial_proto_baseup.prototype.state_main$f$vret = function(info) {
 		var dat = this.data_in(info);
 		var tid = this.get_context(dat, CONTEXT_DEEP_TID);
 		if(tid === null) throw 'should base on mulport protocol.';
 		this.switch_thread(info, tid);
 	};
-	stackbox_spec_serial_protocol.prototype.state_transdata$f = function(info) {
+	stackbox_spec_serial_proto_baseup.prototype.state_transdata$f = function(info) {
 		var dat = this.data_in(info);
 		var context = this.local_get('context_out');
 		if(context === undefined) {
@@ -1714,8 +1725,8 @@ var stackbox_spec_serial_protocol = (function(_super) {
 		if(this.current_thread() !== null)
 			this.goto_state('transdata');
 	};
-	stackbox_spec_serial_protocol.prototype.statrig_transdata$f$vret = ['@proto_back'];
-	stackbox_spec_serial_protocol.prototype.state_transdata$f$vret = function(info) {
+	stackbox_spec_serial_proto_baseup.prototype.statrig_transdata$f$vret = ['@proto_back'];
+	stackbox_spec_serial_proto_baseup.prototype.state_transdata$f$vret = function(info) {
 		var dat = this.data_in(info);
 		if(dat.val == 'done') {
 			var context = this.local_get('context_ret');
@@ -1728,8 +1739,8 @@ var stackbox_spec_serial_protocol = (function(_super) {
 			this.done_thread();
 		}
 	};
-	return stackbox_spec_serial_protocol;
-})(stackbox_dfan_automaton_multithread);
+	return stackbox_spec_serial_proto_baseup;
+})(stackbox_spec_serial_protocol);
 
 var stackbox_spec_serial_proto_mulport = (function(_super) {
 	__extends(stackbox_spec_serial_proto_mulport, _super);
@@ -1769,7 +1780,7 @@ var stackbox_spec_serial_proto_mulport = (function(_super) {
 		}
 	};
 	return stackbox_spec_serial_proto_mulport;
-})(stackbox_spec_serial_protocol);
+})(stackbox_spec_serial_proto_baseup);
 
 /*************************************************************************************/
 
@@ -3691,7 +3702,7 @@ function test10() {
 			this.goto_state('transdata');
 		};
 		return tstproto;
-	})(stackbox_spec_serial_protocol);
+	})(stackbox_spec_serial_proto_baseup);
 	
 	var tstproto2 = new (function(_super) {
 		__extends(tstproto2, _super);
