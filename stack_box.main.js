@@ -1103,7 +1103,9 @@ var stackbox_dfan_automaton_multithread = (function(_super) {
 		this._thread_state = {};
 		this._thread_local = {};
 	}
-	stackbox_dfan_automaton_multithread.prototype.new_thread = function(tid) {
+	stackbox_dfan_automaton_multithread.prototype.new_thread = function(state, tid) {
+		if(!state)
+			state = null;
 		if(tid === undefined) {
 			tid = this._last_tid++;
 		} else {
@@ -1112,7 +1114,7 @@ var stackbox_dfan_automaton_multithread = (function(_super) {
 			if(this._last_tid < tid + 1)
 				this._last_tid = tid + 1;
 		}
-		this._thread_state[tid] = null;
+		this._thread_state[tid] = state;
 		this._thread_local[tid] = {};
 		if(this._cur_tid === null)
 			this._cur_tid = tid;
@@ -1167,14 +1169,16 @@ var stackbox_dfan_automaton_multithread = (function(_super) {
 			state = '__mt_root__'
 		this._state = state;
 	};
-	stackbox_dfan_automaton_multithread.prototype.goto_state = function(state, tid) {
-		if(this._cur_tid === null)
-			this.new_thread();
-		if(this._state === null)
+	stackbox_dfan_automaton_multithread.prototype.goto_state = function(state) {
+		if(this._state === null) {
 			this.root_state();
-		if(tid === undefined)
-			tid = this._cur_tid
-		this._thread_state[tid] = state;
+			if(this._cur_tid === null)
+				this.new_thread();
+		}
+		if(this._cur_tid === null)
+			/* no thread to goto, do nothing */
+			return;
+		this._thread_state[this._cur_tid] = state;
 		//console.log('goto', state);
 	};
 	stackbox_dfan_automaton_multithread.prototype.from_state = function(state) {
@@ -1659,7 +1663,7 @@ var stackbox_spec_serial_protocol = (function(_super) {
 	stackbox_spec_serial_protocol.prototype.data_return = function(dat) {
 		this.prop_set('#proto_return', dat.context.concat(dat.val));
 	};
-	stackbox_spec_serial_protocol.prototype.output = function(port, val) {
+	stackbox_spec_serial_protocol.prototype.port_out = function(port, val) {
 		if(this.prop_exist('@port_out'))
 			this.prop_input('@port_out', [port, val]);
 	};
@@ -1683,37 +1687,60 @@ var stackbox_spec_serial_protocol = (function(_super) {
 			return null;
 		return dat.context[deep];
 	};
-	/* TODO */
-	stackbox_spec_serial_protocol.prototype.state_main$f = function(info) {};
-	return stackbox_spec_serial_protocol;
-})(stackbox_dfan_automaton_multithread);
-
-var stackbox_spec_serial_proto_baseup = (function(_super) {
-	__extends(stackbox_spec_serial_proto_baseup, _super);
-	function stackbox_spec_serial_proto_baseup() {
-		_super.call(this);
-	}
-	stackbox_spec_serial_proto_baseup.prototype.proto_name = "baseup";
+	stackbox_spec_serial_protocol.prototype.set_context = function(dat, deep, val) {
+		if(deep < 0)
+			deep = dat.context.length + deep;
+		if(deep < 0 || deep >= dat.context.length)
+			throw 'invalid deep.';
+		dat.context[deep] = val;
+	};
+	stackbox_spec_serial_protocol.prototype.push_context = function(dat, val) {
+		dat.context.unshift(val);
+	};
+	stackbox_spec_serial_protocol.prototype.set_srcinfo = function(info, dat) {
+		info.val = dat.context.concat(dat.val);
+	};
 	/* Base on mulport protocol */
 	var CONTEXT_DEEP_TID = -2;
-	stackbox_spec_serial_proto_baseup.prototype.state_main$f = function(info) {
+	var DATACMD_TOKEN_DONE = 'done';
+	stackbox_spec_serial_protocol.prototype.done_stream = function(dat) {
+		var context = this.local_get('context_ret');
+		if(context === undefined)
+			context = dat.context;
+		var dat = {
+			"val": DATACMD_TOKEN_DONE,
+			"context": context,
+		};
+		this.data_return(dat);
+		this.done_thread();
+	};
+	stackbox_spec_serial_protocol.prototype.state_main$f = function(info) {
 		var dat = this.data_in(info);
 		var tid = this.get_context(dat, CONTEXT_DEEP_TID);
 		if(tid === null) throw 'should base on mulport protocol.';
 		if(!this.exist_thread(tid)) {
-			this.new_thread(tid);
-			this.goto_state('idle', tid);
+			this.new_thread('idle', tid);
 		}
 		this.switch_thread(info, tid);
 	};
-	stackbox_spec_serial_proto_baseup.prototype.statrig_main$f$vret = ['@proto_back'];
-	stackbox_spec_serial_proto_baseup.prototype.state_main$f$vret = function(info) {
+	stackbox_spec_serial_protocol.prototype.statrig_main$f$vret = ['@proto_back'];
+	stackbox_spec_serial_protocol.prototype.state_main$f$vret = function(info) {
 		var dat = this.data_in(info);
 		var tid = this.get_context(dat, CONTEXT_DEEP_TID);
 		if(tid === null) throw 'should base on mulport protocol.';
 		this.switch_thread(info, tid);
 	};
-	stackbox_spec_serial_proto_baseup.prototype.state_transdata$f = function(info) {
+	return stackbox_spec_serial_protocol;
+})(stackbox_dfan_automaton_multithread);
+
+var stackbox_spec_serial_proto_basemid = (function(_super) {
+	__extends(stackbox_spec_serial_proto_basemid, _super);
+	function stackbox_spec_serial_proto_basemid() {
+		_super.call(this);
+	}
+	stackbox_spec_serial_proto_basemid.prototype.proto_name = "BMID";
+	var DATACMD_TOKEN_DONE = 'done';
+	stackbox_spec_serial_proto_basemid.prototype.state_transdata$f = function(info) {
 		var dat = this.data_in(info);
 		var context = this.local_get('context_out');
 		if(context === undefined) {
@@ -1722,13 +1749,12 @@ var stackbox_spec_serial_proto_baseup = (function(_super) {
 			dat.context = context;
 			this.data_out(dat);
 		}
-		if(this.current_thread() !== null)
-			this.goto_state('transdata');
+		this.goto_state('transdata');
 	};
-	stackbox_spec_serial_proto_baseup.prototype.statrig_transdata$f$vret = ['@proto_back'];
-	stackbox_spec_serial_proto_baseup.prototype.state_transdata$f$vret = function(info) {
+	stackbox_spec_serial_proto_basemid.prototype.statrig_transdata$f$vret = ['@proto_back'];
+	stackbox_spec_serial_proto_basemid.prototype.state_transdata$f$vret = function(info) {
 		var dat = this.data_in(info);
-		if(dat.val == 'done') {
+		if(dat.val == DATACMD_TOKEN_DONE) {
 			var context = this.local_get('context_ret');
 			if(context === undefined) {
 				this.prop_set('#proto_return', info.val);
@@ -1739,7 +1765,7 @@ var stackbox_spec_serial_proto_baseup = (function(_super) {
 			this.done_thread();
 		}
 	};
-	return stackbox_spec_serial_proto_baseup;
+	return stackbox_spec_serial_proto_basemid;
 })(stackbox_spec_serial_protocol);
 
 var stackbox_spec_serial_proto_mulport = (function(_super) {
@@ -1751,26 +1777,27 @@ var stackbox_spec_serial_proto_mulport = (function(_super) {
 	stackbox_spec_serial_proto_mulport.prototype.proto_name = "mulport";
 	var CONTEXT_DEEP_PORT = -1;
 	var CONTEXT_DEEP_TID = -2;
+	var DATACMD_TOKEN_DONE = 'done';
 	stackbox_spec_serial_proto_mulport.prototype.state_main$f = function(info) {
 		var dat = this.data_in(info);
 		var port = this.get_context(dat, CONTEXT_DEEP_PORT);
 		var tid = this.port_thread_map[port];
 		if(tid === undefined) {
-			tid = this.new_thread();
+			tid = this.new_thread('idle');
 			this.port_thread_map[port] = tid;
-			this.goto_state('idle', tid);
 		}
 		this.switch_thread(info, tid);
 	};
 	stackbox_spec_serial_proto_mulport.prototype.state_idle = function(info) {
 		var dat = this.data_in(info);
-		dat.context.unshift(this.current_thread());
+		this.push_context(dat, this.current_thread());
 		this.local_set('context_out', dat.context);
+		this.goto_state('transdata');
 		this.state_transdata$f(info);
 	}
 	stackbox_spec_serial_proto_mulport.prototype.state_transdata$f$vret = function(info) {
 		var dat = this.data_in(info);
-		if(dat.val == 'done') {
+		if(dat.val == DATACMD_TOKEN_DONE) {
 			var port = this.get_context(dat, CONTEXT_DEEP_PORT);
 			var tid = this.get_context(dat, CONTEXT_DEEP_TID);
 			if(this.port_thread_map[port] !== tid)
@@ -1780,7 +1807,91 @@ var stackbox_spec_serial_proto_mulport = (function(_super) {
 		}
 	};
 	return stackbox_spec_serial_proto_mulport;
-})(stackbox_spec_serial_proto_baseup);
+})(stackbox_spec_serial_proto_basemid);
+
+var stackbox_spec_serial_proto_baseterm = (function(_super) {
+	__extends(stackbox_spec_serial_proto_baseterm, _super);
+	function stackbox_spec_serial_proto_baseterm() {
+		_super.call(this);
+		this._wait_ports = {};
+		this._isawake = false;
+	}
+	stackbox_spec_serial_proto_baseterm.prototype.proto_name = "BTERM";
+	var CONTEXT_DEEP_PORT = -1;
+	var CONTEXT_DEEP_TID = -2;
+	var BUSCMD_TOKEN_DONE = 'done';
+	stackbox_spec_serial_proto_baseterm.prototype.wait_port = function(port) {
+		if(this._wait_ports[port] !== undefined)
+			throw 'port is already waited by other thread.';
+		var tid = this.current_thread();
+		if(tid === null)
+			throw 'thread is already done.';
+		this._wait_ports[port] = tid;
+	};
+	stackbox_spec_serial_proto_baseterm.prototype.awake_port = function(info) {
+		var dat = this.data_in(info);
+		var port = this.get_context(dat, CONTEXT_DEEP_PORT);
+		var dst_tid = this._wait_ports[port];
+		if(dst_tid === undefined)
+			return false;
+		delete this._wait_ports[port];
+		this.done_stream(dat);
+		/* terminal protocol do not care about tid, don't handle. */
+		/* this.set_context(dat, CONTEXT_DEEP_TID, dst_tid);
+		this.set_srcinfo(info, dat); */
+		this._isawake = true;
+		this.switch_thread(info, dst_tid);
+		this._isawake = false;
+		return true;
+	};
+	stackbox_spec_serial_proto_baseterm.prototype.is_awake = function() {
+		return this._isawake;
+	};
+	stackbox_spec_serial_proto_baseterm.prototype.wait_state = function(state) {
+		var dport = this.local_get('port_dst');
+		if(dport !== undefined)
+			this.wait_port(dport);
+		this.goto_state(state);
+	};
+	stackbox_spec_serial_proto_baseterm.prototype.fix_dat = function(dat) {
+		if(this.is_awake()) {
+			this.set_context(dat, CONTEXT_DEEP_TID, this.current_thread());
+			var port = this.local_get('port_src');
+			if(port !== undefined)
+				this.set_context(dat, CONTEXT_DEEP_PORT, port);
+		}
+	};
+	stackbox_spec_serial_proto_baseterm.prototype.done_stream = function(dat) {
+		this.fix_dat(dat);
+		_super.prototype.done_stream.call(this, dat);
+	};
+	stackbox_spec_serial_proto_baseterm.prototype.state_transdata = function(info) {
+		if(this.is_awake()) {
+			this.goto_state('transdone');
+			this.state_transdone(info);
+			return;
+		}
+		var dat = this.data_in(info);
+		var sport = this.get_context(dat, CONTEXT_DEEP_PORT);
+		if(sport !== this.local_get('port_src'))
+			this.local_set('port_src', sport);
+		var dport = this.local_get('port_dst');
+		if(dport !== undefined) {
+			this.port_out(dport, dat.val);
+			this.wait_port(dport);
+		}
+		this.goto_state('transdata');
+	};
+	stackbox_spec_serial_proto_baseterm.prototype.state_transdone = function(info) {
+		var dat = this.data_in(info);
+		if(dat.val == BUSCMD_TOKEN_DONE) {
+			this.done_stream(dat);
+		} else {
+			this.wait_state('transdata');
+		}
+	};
+	return stackbox_spec_serial_proto_baseterm;
+})(stackbox_spec_serial_protocol);
 
 /*************************************************************************************/
 
@@ -3680,11 +3791,12 @@ function test10() {
 		}
 		tstproto.prototype.proto_name = "tstp";
 		tstproto.prototype.state_idle = function(info) {
-			if(this.data_in_v(info) == this.proto_name) {
+			var dat = this.data_in(info);
+			if(dat.val == this.proto_name) {
 				console.log('proto_token', this.proto_name);
 				this.goto_state('s1');
 			} else {
-				this.done_thread();
+				this.done_stream(dat);
 			}
 		};
 		tstproto.prototype.state_s1 = function(info) {
@@ -3697,12 +3809,12 @@ function test10() {
 			var dat = this.data_in(info);
 			console.log('s2', dat.val);
 			var ps = this.local_get('port_str') + dat.val;
-			dat.context.unshift(ps);
+			this.push_context(dat, ps);
 			this.local_set('context_out', dat.context);
 			this.goto_state('transdata');
 		};
 		return tstproto;
-	})(stackbox_spec_serial_proto_baseup);
+	})(stackbox_spec_serial_proto_basemid);
 	
 	var tstproto2 = new (function(_super) {
 		__extends(tstproto2, _super);
@@ -3721,23 +3833,56 @@ function test10() {
 			var dat = this.data_in(info);
 			var port = this.local_get('port_str_all');
 			console.log('last', port, dat.val);
-			this.output(port, dat.val);
-			dat.val = 'done';
-			this.data_return(dat);
-			this.done_thread();
+			this.port_out(port, dat.val);
+			this.done_stream(dat);
 		};
 		return tstproto2;
 	})(tstproto);
 	
+	var tstproto3 = new (function(_super) {
+		__extends(tstproto3, _super);
+		function tstproto3() {
+			_super.call(this);
+		}
+		tstproto3.prototype.proto_name = "tstp2";
+		tstproto3.prototype.state_idle = function(info) {
+			if(this.awake_port(info)) return;
+			var dat = this.data_in(info);
+			if(dat.val == this.proto_name) {
+				console.log('proto_token', this.proto_name);
+				this.goto_state('s1');
+			} else {
+				this.done_stream(dat);
+			}
+		};
+		tstproto3.prototype.state_s1 = function(info) {
+			var dat = this.data_in(info);
+			console.log('s1', dat.val);
+			this.local_set('port_str', dat.val);
+			this.goto_state('s2');
+		};
+		tstproto3.prototype.state_s2 = function(info) {
+			var dat = this.data_in(info);
+			console.log('s2', dat.val);
+			var ps = this.get_context(dat, 0) + this.local_get('port_str') + dat.val;
+			this.local_set('port_dst', ps);
+			this.goto_state('transdata');
+		};
+		return tstproto3;
+	})(stackbox_spec_serial_proto_baseterm);
+	
 	var ib1 = new stackbox_spec_serial_bus('');
 	var ib2 = new stackbox_spec_serial_bus('');
+	var ib3 = new stackbox_spec_serial_bus('');
+	var ib4 = new stackbox_spec_serial_bus('');
+	var ib5 = new stackbox_spec_serial_bus('');
 	
 	var nd = new stackbox_spec_serial_node();
 	nd.add_port('aaaa', ib1);
 	nd.add_port('bbbb', ib2);
-	nd.add_port('cccc');
-	nd.add_port('dddd');
-	nd.add_port('abcd');
+	nd.add_port('cccc', ib3);
+	nd.add_port('dddd', ib4);
+	nd.add_port('abcd', ib5);
 	nd.init();
 	
 	var mp = new stackbox_spec_serial_proto_mulport();
@@ -3745,7 +3890,7 @@ function test10() {
 	var t1p = new tstproto();
 	mp.bind_next(t1p);
 	mp.init();
-	var t2p = new tstproto2();
+	var t2p = new tstproto3();
 	t1p.bind_next(t2p);
 	t1p.init();
 	t2p.bind_ports(nd.proto_out());
@@ -3766,7 +3911,19 @@ function test10() {
 	ib2.set('d');
 	ib2.set('456');
 	ib1.set('d');
+	ib4.set('tstp');
+	ib4.set('e');
+	ib4.set('f');
+	ib4.set('aaaaa');
 	ib1.set('123');
+	ib5.set('tstp');
+	ib5.set('e');
+	ib5.set('f');
+	ib5.set('done');
+	ib4.set('tstp');
+	ib4.set('e');
+	ib4.set('f');
+	ib4.set('done');
 	
 }
 
