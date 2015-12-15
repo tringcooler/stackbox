@@ -1127,6 +1127,9 @@ var stackbox_dfan_automaton_multithread = (function(_super) {
 	stackbox_dfan_automaton_multithread.prototype.current_thread = function() {
 		return this._cur_tid;
 	};
+	stackbox_dfan_automaton_multithread.prototype.threads_count = function() {
+		return Object.keys(this._thread_state).length;
+	};
 	stackbox_dfan_automaton_multithread.prototype.del_thread = function(tid) {
 		if(!this.exist_thread(tid)) return false;
 		if(tid == this._cur_tid) this._cur_tid = null;
@@ -1700,6 +1703,10 @@ var stackbox_spec_serial_protocol = (function(_super) {
 	stackbox_spec_serial_protocol.prototype.set_srcinfo = function(info, dat) {
 		info.val = dat.context.concat(dat.val);
 	};
+	stackbox_spec_serial_protocol.prototype.check_done = function() {
+		if(this.threads_count() != 0)
+			throw 'some streams is still alive.';
+	};
 	/* Base on mulport protocol */
 	var CONTEXT_DEEP_TID = -2;
 	var DATACMD_TOKEN_DONE = 'done';
@@ -1892,6 +1899,8 @@ var stackbox_spec_serial_proto_baseterm = (function(_super) {
 	};
 	return stackbox_spec_serial_proto_baseterm;
 })(stackbox_spec_serial_protocol);
+
+var stackbox_spec_serial_proto_router
 
 /*************************************************************************************/
 
@@ -3784,7 +3793,7 @@ function test9() {
 
 function test10() {
 	
-	var tstproto = new (function(_super) {
+	var tstproto = (function(_super) {
 		__extends(tstproto, _super);
 		function tstproto() {
 			_super.call(this);
@@ -3816,7 +3825,7 @@ function test10() {
 		return tstproto;
 	})(stackbox_spec_serial_proto_basemid);
 	
-	var tstproto2 = new (function(_super) {
+	var tstproto2 = (function(_super) {
 		__extends(tstproto2, _super);
 		function tstproto2() {
 			_super.call(this);
@@ -3839,7 +3848,7 @@ function test10() {
 		return tstproto2;
 	})(tstproto);
 	
-	var tstproto3 = new (function(_super) {
+	var tstproto3 = (function(_super) {
 		__extends(tstproto3, _super);
 		function tstproto3() {
 			_super.call(this);
@@ -3924,7 +3933,14 @@ function test10() {
 	ib4.set('e');
 	ib4.set('f');
 	ib4.set('done');
+	ib4.set('tstp');
+	ib4.set('e');
+	ib4.set('f');
+	ib4.set('done');
 	
+	mp.check_done();
+	t1p.check_done();
+	t2p.check_done();
 }
 
 $(document).ready(function() {
