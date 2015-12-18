@@ -1218,21 +1218,24 @@ var stackbox_dfan_automaton_multithread = (function(_super) {
 	stackbox_dfan_automaton_multithread.prototype.prop_get = function(name) {
 		var tid = this._cur_tid;
 		var r = _super.prototype.prop_get.call(this, name);
-		this._cur_tid = tid;
+		if(this.exist_thread(tid))
+			this._cur_tid = tid;
 		return r;
 	};
 	/* perf_importance: more */
 	stackbox_dfan_automaton_multithread.prototype.prop_set = function(name, val) {
 		var tid = this._cur_tid;
 		var r = _super.prototype.prop_set.call(this, name, val);
-		this._cur_tid = tid;
+		if(this.exist_thread(tid))
+			this._cur_tid = tid;
 		return r;
 	};
 	/* perf_importance: more */
 	stackbox_dfan_automaton_multithread.prototype.prop_input = function(name, val) {
 		var tid = this._cur_tid;
 		var r = _super.prototype.prop_input.call(this, name, val);
-		this._cur_tid = tid;
+		if(this.exist_thread(tid))
+			this._cur_tid = tid;
 		return r;
 	};
 	stackbox_dfan_automaton_multithread.prototype.state___mt_root__ = function(info) {
