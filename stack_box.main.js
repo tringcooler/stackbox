@@ -636,6 +636,25 @@ var stackbox_dfan_automaton = (function() {
 			var r = null;
 			for(var i = 0; i < _ts.length; i++) {
 				r = _ts[i].call(this, info);
+				if(r === null)
+					break;
+			}
+			return r;
+		}
+	};
+	/* perf_importance: most */
+	stackbox_dfan_automaton.prototype._exec_state = function(info, state) {
+		var name = info.name;
+		var trigger = info.trigger;
+		if(/*!in*/this._props_info[name].triggers[state] === undefined
+			|| /*!in*/this._props_info[name].triggers[state][trigger] === undefined) return;
+		var _ts = this._props_info[name].triggers[state][trigger];
+		if(_ts) {
+			var r = null;
+			for(var i = 0; i < _ts.length; i++) {
+				r = _ts[i].call(this, info);
+				if(r === null)
+					break;
 			}
 			return r;
 		}
@@ -735,6 +754,13 @@ var stackbox_dfan_automaton = (function() {
 		//var re_p = /^(\w+)(\$(\$)?(\d*)(\$)?)?$/.exec(s);
 		//var re_p = /^(\w+)(?=.*?(?:\$(i)?(n)?(\d+)?)?)(?=.*?(?:\$t(t)?)?)$/.exec(s);
 		//var re_p = /^(\w+)(\$(m)?(n)?([1-9]\d*)?(\$(h)?)?)?$/.exec(s);
+		/*
+		$[a/m][n][num]: [modify]/append [+]/- [1]/num prios
+			append should be without num  n: [after]/before
+		$t[h]: term [tail]/head
+		$v[comment]: comment
+		$f: flood mode
+		*/
 		var re_p = /^\w+(?=(?:.*?(\$([a|m])(n)?([1-9]\d*)?))?)(?=(?:.*?(\$t(h)?))?)(?=(?:.*?(\$v(\w+)))?)(?=(?:.*?(\$f))?)/.exec(s);
 		var prio = 1;
 		var modify = true;
@@ -747,8 +773,8 @@ var stackbox_dfan_automaton = (function() {
 				if(re_p[2] == 'a')
 					modify = false;
 				if(re_p[4])
-					//prio = parseInt(re_p[5]);
-					prio = +re_p[5];
+					//prio = parseInt(re_p[4]);
+					prio = +re_p[4];
 				if(re_p[3])
 					prio = - prio;
 			}
@@ -988,6 +1014,11 @@ var stackbox_dfan_automaton = (function() {
 		//console.log('goto', state);
 	};
 	/* perf_importance: most */
+	stackbox_dfan_automaton.prototype.jump_state = function(info, state) {
+		this.goto_state(state);
+		this._exec_state(info, state);
+	};
+	/* perf_importance: most */
 	stackbox_dfan_automaton.prototype.from_state = function(state) {
 		return this._state == state;
 	};
@@ -1146,18 +1177,7 @@ var stackbox_dfan_automaton_multithread = (function(_super) {
 			this._cur_tid = tid;
 		var thread_state = this._thread_state[tid];
 		if(thread_state === undefined) return;
-		var name = info.name;
-		var trigger = info.trigger;
-		if(/*!in*/this._props_info[name].triggers[thread_state] === undefined
-			|| /*!in*/this._props_info[name].triggers[thread_state][trigger] === undefined) return;
-		var _ts = this._props_info[name].triggers[thread_state][trigger];
-		if(_ts) {
-			var r = null;
-			for(var i = 0; i < _ts.length; i++) {
-				r = _ts[i].call(this, info);
-			}
-			return r;
-		}
+		return this._exec_state(info, thread_state);
 	};
 	stackbox_dfan_automaton_multithread.prototype.local_get = function(name) {
 		return this._thread_local[this._cur_tid][name];
@@ -1181,11 +1201,39 @@ var stackbox_dfan_automaton_multithread = (function(_super) {
 		if(this._cur_tid === null)
 			/* no thread to goto, do nothing */
 			return;
+		if(this._thread_state[this._cur_tid] === undefined)
+			/* current thread is done, do nothing */
+			return;
 		this._thread_state[this._cur_tid] = state;
 		//console.log('goto', state);
 	};
+	stackbox_dfan_automaton_multithread.prototype.jump_state = function(info, state) {
+		this.goto_state(state);
+		this._exec_state(info, state);
+	};
 	stackbox_dfan_automaton_multithread.prototype.from_state = function(state) {
 		return this._thread_state[this._cur_tid] == state;
+	};
+	/* perf_importance: more */
+	stackbox_dfan_automaton_multithread.prototype.prop_get = function(name) {
+		var tid = this._cur_tid;
+		var r = _super.prototype.prop_get.call(this, name);
+		this._cur_tid = tid;
+		return r;
+	};
+	/* perf_importance: more */
+	stackbox_dfan_automaton_multithread.prototype.prop_set = function(name, val) {
+		var tid = this._cur_tid;
+		var r = _super.prototype.prop_set.call(this, name, val);
+		this._cur_tid = tid;
+		return r;
+	};
+	/* perf_importance: more */
+	stackbox_dfan_automaton_multithread.prototype.prop_input = function(name, val) {
+		var tid = this._cur_tid;
+		var r = _super.prototype.prop_input.call(this, name, val);
+		this._cur_tid = tid;
+		return r;
 	};
 	stackbox_dfan_automaton_multithread.prototype.state___mt_root__ = function(info) {
 		this.switch_thread(info);
@@ -1683,6 +1731,13 @@ var stackbox_spec_serial_protocol = (function(_super) {
 	stackbox_spec_serial_protocol.prototype.bind_ports = function(bus) {
 		this.bind_prop('@port_out', bus);
 	};
+	stackbox_spec_serial_protocol.prototype.copy_data = function(dat) {
+		var n_dat = {
+			"val": dat.val,
+			"context": dat.context.slice(),
+		};
+		return n_dat;
+	};
 	stackbox_spec_serial_protocol.prototype.get_context = function(dat, deep) {
 		if(deep < 0)
 			deep = dat.context.length + deep;
@@ -1709,18 +1764,6 @@ var stackbox_spec_serial_protocol = (function(_super) {
 	};
 	/* Base on mulport protocol */
 	var CONTEXT_DEEP_TID = -2;
-	var DATACMD_TOKEN_DONE = 'done';
-	stackbox_spec_serial_protocol.prototype.done_stream = function(dat) {
-		var context = this.local_get('context_ret');
-		if(context === undefined)
-			context = dat.context;
-		var dat = {
-			"val": DATACMD_TOKEN_DONE,
-			"context": context,
-		};
-		this.data_return(dat);
-		this.done_thread();
-	};
 	stackbox_spec_serial_protocol.prototype.state_main$f = function(info) {
 		var dat = this.data_in(info);
 		var tid = this.get_context(dat, CONTEXT_DEEP_TID);
@@ -1746,10 +1789,70 @@ var stackbox_spec_serial_proto_basemid = (function(_super) {
 		_super.call(this);
 	}
 	stackbox_spec_serial_proto_basemid.prototype.proto_name = "BMID";
+	var CONTEXT_DEEP_TID = -2;
+	var CONTEXT_DEEP_DSTPROTO = 0;
 	var DATACMD_TOKEN_DONE = 'done';
+	var DATACMD_TOKEN_BYPASS = '__bypass__';
+	var LOCAL_CONTEXT_OUT = 'context_out';
+	var LOCAL_CONTEXT_RET = 'context_ret';
+	stackbox_spec_serial_proto_basemid.prototype.push_to_out = function(dat, val) {
+		this.push_context(dat, val);
+		this.local_set(LOCAL_CONTEXT_OUT, dat.context);
+	};
+	stackbox_spec_serial_proto_basemid.prototype.push_to_ret = function(dat, val) {
+		this.push_context(dat, val);
+		this.local_set(LOCAL_CONTEXT_RET, dat.context);
+	};
+	stackbox_spec_serial_proto_basemid.prototype.done_stream = function(dat) {
+		var context = this.local_get(LOCAL_CONTEXT_RET);
+		if(context === undefined)
+			context = dat.context;
+		this.data_return({
+			"val": DATACMD_TOKEN_DONE,
+			"context": context,
+		});
+		this.done_thread();
+	};
+	stackbox_spec_serial_proto_basemid.prototype.channel_bypass = function(to_proto) {
+		var tid = this.new_thread('transdata');
+		var dat = {
+			"val": DATACMD_TOKEN_BYPASS,
+			"context": [to_proto, tid, "__dummy_port__"],
+		};
+		this.data_out(dat);
+		return {
+			"tid": tid,
+			"context": [tid, "__dummy_port__"],
+		};
+	};
+	stackbox_spec_serial_proto_basemid.prototype.send_bypass = function(val, chn) {
+		var dat = {
+			"val": val,
+			"context": chn.context,
+		};
+		this.data_out(dat);
+	};
+	stackbox_spec_serial_proto_basemid.prototype.data_bypass = function(dat, chn) {
+		var n_dat = this.copy_data(dat);
+		this.set_context(n_dat, CONTEXT_DEEP_TID, chn.tid);
+		this.data_out(n_dat);
+	};
+	stackbox_spec_serial_proto_basemid.prototype.trans_bypass = function(info) {
+		var dat = this.data_in(info);
+		var dst_proto = this.get_context(dat, CONTEXT_DEEP_DSTPROTO);
+		if(dat.val != DATACMD_TOKEN_BYPASS)
+			return false;
+		if(dst_proto == this.proto_name) {
+			this.goto_state('idle');
+		} else {
+			this.data_out(dat);
+			this.goto_state('transdata');
+		}
+		return true;
+	};
 	stackbox_spec_serial_proto_basemid.prototype.state_transdata$f = function(info) {
 		var dat = this.data_in(info);
-		var context = this.local_get('context_out');
+		var context = this.local_get(LOCAL_CONTEXT_OUT);
 		if(context === undefined) {
 			this.prop_set('#proto_out', info.val);
 		} else {
@@ -1762,7 +1865,7 @@ var stackbox_spec_serial_proto_basemid = (function(_super) {
 	stackbox_spec_serial_proto_basemid.prototype.state_transdata$f$vret = function(info) {
 		var dat = this.data_in(info);
 		if(dat.val == DATACMD_TOKEN_DONE) {
-			var context = this.local_get('context_ret');
+			var context = this.local_get(LOCAL_CONTEXT_RET);
 			if(context === undefined) {
 				this.prop_set('#proto_return', info.val);
 			} else {
@@ -1797,11 +1900,9 @@ var stackbox_spec_serial_proto_mulport = (function(_super) {
 	};
 	stackbox_spec_serial_proto_mulport.prototype.state_idle = function(info) {
 		var dat = this.data_in(info);
-		this.push_context(dat, this.current_thread());
-		this.local_set('context_out', dat.context);
-		this.goto_state('transdata');
-		this.state_transdata$f(info);
-	}
+		this.push_to_out(dat, this.current_thread());
+		this.jump_state(info, 'transdata');
+	};
 	stackbox_spec_serial_proto_mulport.prototype.state_transdata$f$vret = function(info) {
 		var dat = this.data_in(info);
 		if(dat.val == DATACMD_TOKEN_DONE) {
@@ -1816,7 +1917,7 @@ var stackbox_spec_serial_proto_mulport = (function(_super) {
 	return stackbox_spec_serial_proto_mulport;
 })(stackbox_spec_serial_proto_basemid);
 
-var stackbox_spec_serial_proto_baseterm = (function(_super) {
+var stackbox_spec_serial_proto_baseterm = (function(_super, _refer) {
 	__extends(stackbox_spec_serial_proto_baseterm, _super);
 	function stackbox_spec_serial_proto_baseterm() {
 		_super.call(this);
@@ -1827,13 +1928,26 @@ var stackbox_spec_serial_proto_baseterm = (function(_super) {
 	var CONTEXT_DEEP_PORT = -1;
 	var CONTEXT_DEEP_TID = -2;
 	var BUSCMD_TOKEN_DONE = 'done';
+	var LOCAL_PORT_DST = 'port_dst';
+	var LOCAL_PORT_SRC = 'port_src';
 	stackbox_spec_serial_proto_baseterm.prototype.wait_port = function(port) {
-		if(this._wait_ports[port] !== undefined)
-			throw 'port is already waited by other thread.';
 		var tid = this.current_thread();
 		if(tid === null)
 			throw 'thread is already done.';
+		if(this._wait_ports[port] !== undefined) {
+			if(this._wait_ports[port] == tid)
+				return;
+			else
+				throw 'port is already waited by other thread.';
+		}
 		this._wait_ports[port] = tid;
+	};
+	stackbox_spec_serial_proto_baseterm.prototype.cancel_wait = function() {
+		var tid = this.current_thread();
+		for(port in this._wait_ports) {
+			if(this._wait_ports[port] == tid)
+				delete this._wait_ports[port];
+		}
 	};
 	stackbox_spec_serial_proto_baseterm.prototype.awake_port = function(info) {
 		var dat = this.data_in(info);
@@ -1855,7 +1969,7 @@ var stackbox_spec_serial_proto_baseterm = (function(_super) {
 		return this._isawake;
 	};
 	stackbox_spec_serial_proto_baseterm.prototype.wait_state = function(state) {
-		var dport = this.local_get('port_dst');
+		var dport = this.local_get(LOCAL_PORT_DST);
 		if(dport !== undefined)
 			this.wait_port(dport);
 		this.goto_state(state);
@@ -1863,26 +1977,25 @@ var stackbox_spec_serial_proto_baseterm = (function(_super) {
 	stackbox_spec_serial_proto_baseterm.prototype.fix_dat = function(dat) {
 		if(this.is_awake()) {
 			this.set_context(dat, CONTEXT_DEEP_TID, this.current_thread());
-			var port = this.local_get('port_src');
+			var port = this.local_get(LOCAL_PORT_SRC);
 			if(port !== undefined)
 				this.set_context(dat, CONTEXT_DEEP_PORT, port);
 		}
 	};
 	stackbox_spec_serial_proto_baseterm.prototype.done_stream = function(dat) {
 		this.fix_dat(dat);
-		_super.prototype.done_stream.call(this, dat);
+		_refer.prototype.done_stream.call(this, dat);
 	};
 	stackbox_spec_serial_proto_baseterm.prototype.state_transdata = function(info) {
 		if(this.is_awake()) {
-			this.goto_state('transdone');
-			this.state_transdone(info);
+			this.jump_state(info, 'transdone');
 			return;
 		}
 		var dat = this.data_in(info);
 		var sport = this.get_context(dat, CONTEXT_DEEP_PORT);
-		if(sport !== this.local_get('port_src'))
-			this.local_set('port_src', sport);
-		var dport = this.local_get('port_dst');
+		if(sport !== this.local_get(LOCAL_PORT_SRC))
+			this.local_set(LOCAL_PORT_SRC, sport);
+		var dport = this.local_get(LOCAL_PORT_DST);
 		if(dport !== undefined) {
 			this.port_out(dport, dat.val);
 			this.wait_port(dport);
@@ -1898,9 +2011,70 @@ var stackbox_spec_serial_proto_baseterm = (function(_super) {
 		}
 	};
 	return stackbox_spec_serial_proto_baseterm;
-})(stackbox_spec_serial_protocol);
+})(stackbox_spec_serial_protocol, stackbox_spec_serial_proto_basemid);
 
-var stackbox_spec_serial_proto_router
+var stackbox_spec_serial_proto_termport = (function(_super) {
+	__extends(stackbox_spec_serial_proto_termport, _super);
+	function stackbox_spec_serial_proto_termport() {
+		_super.call(this);
+	}
+	stackbox_spec_serial_proto_termport.prototype.proto_name = "termport";
+	var CONTEXT_DEEP_DSTPORT = 0;
+	var DATACMD_TOKEN_KILL = '__kill__';
+	var LOCAL_PORT_DST = 'port_dst';
+	stackbox_spec_serial_proto_termport.prototype.state_idle = function(info) {
+		if(this.awake_port(info)) return;
+		var dat = this.data_in(info);
+		if(dat.val == '__bypass__')
+			return;
+		var dport = this.get_context(dat, CONTEXT_DEEP_DSTPORT);
+		this.local_set(LOCAL_PORT_DST, dport);
+		this.jump_state(info, 'transdata');
+	};
+	stackbox_spec_serial_proto_termport.prototype.state_transdata$an = function(info) {
+		var dat = this.data_in(info);
+		if(dat.val == DATACMD_TOKEN_KILL) {
+			this.cancel_wait();
+			this.done_stream(dat);
+			return null;
+		}
+	};
+	return stackbox_spec_serial_proto_termport;
+})(stackbox_spec_serial_proto_baseterm);
+
+var stackbox_spec_serial_proto_router = (function(_super) {
+	__extends(stackbox_spec_serial_proto_router, _super);
+	function stackbox_spec_serial_proto_router() {
+		_super.call(this);
+	}
+	stackbox_spec_serial_proto_router.prototype.proto_name = "router";
+	var BUSCMD_TOKEN_START = "";
+	var BUSCMD_TOKEN_END = "";
+	var BUSCMD_TOKEN_DONE = "";
+	stackbox_spec_serial_proto_router.prototype.state_idle = function(info) {
+		if(this.awake_port(info)) return;
+		var dat = this.data_in(info);
+		if(dat.val == BUSCMD_TOKEN_START) {
+			console.log('route_start');
+			this.goto_state('branch');
+		} else {
+			this.done_stream(dat);
+		}
+	};
+	stackbox_spec_serial_proto_router.prototype.state_branch = function(info) {
+		var dat = this.data_in(info);
+		if(dat.val == BUSCMD_TOKEN_END) {
+			this.done_stream(dat);
+		} else {
+			var dport = dat.val;
+			console.log('route_dport', dport);
+			this.local_set('port_dst', dport);
+			this.port_out(dport, BUSCMD_TOKEN_START);
+			this.goto_state('transdata');
+		}
+	};
+	return stackbox_spec_serial_proto_router;
+})(stackbox_spec_serial_proto_baseterm);
 
 /*************************************************************************************/
 
@@ -3695,8 +3869,7 @@ function test8() {
 			_super.call(this);
 		}
 		inttest.prototype.state_idle = function(info) {
-			this.goto_state('ready');
-			this.state_ready(info);
+			this.jump_state(info, 'ready');
 		};
 		inttest.prototype.statrig_ready = [];
 		inttest.prototype.state_ready = function(info) {
@@ -3941,6 +4114,107 @@ function test10() {
 	mp.check_done();
 	t1p.check_done();
 	t2p.check_done();
+}
+
+function test11() {
+	var tstproto = (function(_super) {
+		__extends(tstproto, _super);
+		function tstproto() {
+			_super.call(this);
+		}
+		tstproto.prototype.proto_name = "tstp";
+		tstproto.prototype.state_idle = function(info) {
+			if(this.trans_bypass(info)) return;
+			var dat = this.data_in(info);
+			if(dat.val == this.proto_name) {
+				console.log('proto_token', this.proto_name);
+				this.goto_state('s1');
+			} else if(dat.val == 'done') {
+				var chn = this.channel_bypass('termport');
+				this.data_bypass(dat, chn);
+				this.done_stream(dat);
+			} else {
+				this.done_stream(dat);
+			}
+		};
+		tstproto.prototype.state_s1 = function(info) {
+			var dat = this.data_in(info);
+			console.log('s1', dat.val);
+			this.local_set('port_str', dat.val);
+			this.goto_state('s2');
+		};
+		tstproto.prototype.state_s2 = function(info) {
+			var dat = this.data_in(info);
+			console.log('s2', dat.val);
+			var ps = this.local_get('port_str') + dat.val;
+			this.push_to_out(dat, ps);
+			this.goto_state('transdata');
+		};
+		return tstproto;
+	})(stackbox_spec_serial_proto_basemid);
+	
+	var ib1 = new stackbox_spec_serial_bus('');
+	var ib2 = new stackbox_spec_serial_bus('');
+	var ib3 = new stackbox_spec_serial_bus('');
+	var ib4 = new stackbox_spec_serial_bus('');
+	
+	var nd = new stackbox_spec_serial_node();
+	nd.add_port('ab', ib1);
+	nd.add_port('cd', ib2);
+	nd.add_port('ef', ib3);
+	nd.add_port('gh', ib4);
+	nd.init();
+	
+	var mp = new stackbox_spec_serial_proto_mulport();
+	var t1p = new tstproto();
+	var t2p = new tstproto();
+	var t3p = new tstproto();
+	var tmp = new stackbox_spec_serial_proto_termport();
+	
+	mp.bind_in(nd.proto_in());
+	mp.bind_next(t1p);
+	mp.init();
+	t1p.bind_next(t2p);
+	t1p.init();
+	t2p.bind_next(t3p);
+	t2p.init();
+	t3p.bind_next(tmp);
+	t3p.init();
+	tmp.bind_ports(nd.proto_out());
+	tmp.bind_next_none();
+	tmp.init();
+	
+	ib1.set('aaaaa');
+	ib1.set('tstp');
+	ib1.set('a');
+	ib1.set('b');
+	ib1.set('tstp');
+	ib1.set('c');
+	ib1.set('d');
+	ib1.set('tstp');
+	ib1.set('e');
+	ib1.set('f');
+	ib1.set('123');
+	ib1.set('456');
+	//ib1.set('__kill__');
+	/*ib3.set('aaaaa');
+	ib3.set('tstp');
+	ib3.set('k');
+	ib3.set('k');
+	ib3.set('tstp');
+	ib3.set('k');
+	ib3.set('k');
+	ib3.set('tstp');
+	ib3.set('c');
+	ib3.set('d');
+	ib3.set('done');*/
+	ib3.set('done');
+	
+	mp.check_done();
+	t1p.check_done();
+	t2p.check_done();
+	t3p.check_done();
+	tmp.check_done();
 }
 
 $(document).ready(function() {
