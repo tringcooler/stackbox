@@ -1832,11 +1832,14 @@ var stackbox_spec_serial_proto_basemid = (function(_super) {
 		});
 		this.done_thread();
 	};
-	stackbox_spec_serial_proto_basemid.prototype.data_out_new = function(dat) {
-		/* dat modified */
+	stackbox_spec_serial_proto_basemid.prototype.new_channel = function(dat) {
 		var tid = this.new_thread('transdata');
-		this.set_context(dat, CONTEXT_DEEP_TID, tid);
-		this.data_out(dat);
+		var n_dat = this.copy_data(dat);
+		this.set_context(n_dat, CONTEXT_DEEP_TID, tid);
+		return {
+			"tid": tid,
+			"context": n_dat.context,
+		};
 	};
 	stackbox_spec_serial_proto_basemid.prototype.channel_bypass = function(to_proto) {
 		if(to_proto === undefined)
@@ -1852,14 +1855,17 @@ var stackbox_spec_serial_proto_basemid = (function(_super) {
 			"context": [tid, "__dummy_port__"],
 		};
 	};
-	stackbox_spec_serial_proto_basemid.prototype.send_bypass = function(val, chn) {
+	stackbox_spec_serial_proto_basemid.prototype.push_channel = function(psh, chn) {
+		this.push_context(chn, psh);
+	};
+	stackbox_spec_serial_proto_basemid.prototype.send_channel = function(val, chn) {
 		var dat = {
 			"val": val,
 			"context": chn.context,
 		};
 		this.data_out(dat);
 	};
-	stackbox_spec_serial_proto_basemid.prototype.data_bypass = function(dat, chn) {
+	stackbox_spec_serial_proto_basemid.prototype.data_channel = function(dat, chn) {
 		var n_dat = this.copy_data(dat);
 		this.set_context(n_dat, CONTEXT_DEEP_TID, chn.tid);
 		this.data_out(n_dat);
@@ -1880,26 +1886,24 @@ var stackbox_spec_serial_proto_basemid = (function(_super) {
 	stackbox_spec_serial_proto_basemid.prototype.state_transdata$f = function(info) {
 		var dat = this.data_in(info);
 		var context = this.local_get(LOCAL_CONTEXT_OUT);
-		if(context === undefined) {
-			this.prop_set('#proto_out', info.val);
-		} else {
+		if(context !== undefined)
 			dat.context = context;
-			this.data_out(dat);
-		}
+		this.data_out(dat);
 		this.goto_state('transdata');
 	};
 	stackbox_spec_serial_proto_basemid.prototype.statrig_transdata$f$vret = ['@proto_back'];
 	stackbox_spec_serial_proto_basemid.prototype.state_transdata$f$vret = function(info) {
 		var dat = this.data_in(info);
 		if(dat.val == DATARET_TOKEN_DONE) {
-			var context = this.local_get(LOCAL_CONTEXT_RET);
+			/*var context = this.local_get(LOCAL_CONTEXT_RET);
 			if(context === undefined) {
 				this.prop_set('#proto_return', info.val);
 			} else {
 				dat.context = context;
 				this.data_return(dat);
 			}
-			this.done_thread();
+			this.done_thread();*/
+			this.done_stream(dat);
 		}
 	};
 	return stackbox_spec_serial_proto_basemid;
@@ -2076,7 +2080,17 @@ var stackbox_spec_serial_proto_branch = (function(_super) {
 	}
 	stackbox_spec_serial_proto_branch.prototype.proto_name = "branch";
 	var CONTEXT_DEEP_PORT = -1;
+	var DATACMD_TOKEN_KILL = '__kill__';
 	var BUSCMD_TOKEN_START = "->";
+	var BUSCMD_TOKEN_DONE = 'done';
+	stackbox_spec_serial_proto_branch.prototype.done_stream = function(dat) {
+		var port = this.get_context(dat, CONTEXT_DEEP_PORT);
+		var chn = this.new_channel(dat);
+		this.push_channel(port, chn);
+		this.send_channel(BUSCMD_TOKEN_DONE, chn);
+		this.send_channel(DATACMD_TOKEN_KILL, chn);
+		_super.prototype.done_stream.call(this, dat);
+	};
 	stackbox_spec_serial_proto_branch.prototype.state_idle = function(info) {
 		if(this.awake_port(info)) return;
 		var dat = this.data_in(info);
@@ -2093,15 +2107,6 @@ var stackbox_spec_serial_proto_branch = (function(_super) {
 		console.log('route_dport', dport);
 		this.push_to_out(dat, dport);
 		this.goto_state('transdata');
-	};
-	stackbox_spec_serial_proto_branch.prototype.statrig_transdata$a$vret = ['@proto_back'];
-	stackbox_spec_serial_proto_branch.prototype.state_transdata$a$vret = function(info) {
-		if(!this.exist_thread()) {
-			var dat = this.data_in(info);
-			var port = this.get_context(dat, CONTEXT_DEEP_PORT);
-			this.push_context(dat, port);
-			this.data_out_new(dat);
-		}
 	};
 	return stackbox_spec_serial_proto_branch;
 })(stackbox_spec_serial_proto_basemid);
@@ -4186,7 +4191,7 @@ function test11() {
 				this.goto_state('s1');
 			} else if(dat.val == 'done') {
 				var chn = this.channel_bypass('termport');
-				this.data_bypass(dat, chn);
+				this.data_channel(dat, chn);
 				this.done_stream(dat);
 			} else {
 				this.done_stream(dat);
